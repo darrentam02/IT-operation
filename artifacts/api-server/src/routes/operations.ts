@@ -17,6 +17,13 @@ import {
   UpdateStaffStatusResponse,
 } from "@workspace/api-zod";
 import { deepseek } from "../integrations/deepseek";
+import {
+  approveProcurement,
+  loadDashboardStats,
+  loadProcurement,
+  loadStaff,
+  updateStaffStatus,
+} from "../lib/db-runtime";
 
 const router: IRouter = Router();
 
@@ -56,35 +63,39 @@ const auditLogs = [
   { id: "a-05", actor: "Ethan Wong", action: "Completed release gate", target: "UAT data reconciliation", timestamp: "27 Aug 2026, 15:52:13", region: "HK", deputy: false },
 ];
 
-router.get("/dashboard/summary", (_req, res) => {
+router.get("/dashboard/summary", async (_req, res) => {
   const checked = releaseGates.filter((item) => item.checked).length;
+  const db = await loadDashboardStats();
   res.json(GetDashboardSummaryResponse.parse({
-    activeStaff: 247,
-    staleStaff: staff.filter((member) => member.isStale).length,
-    pendingApprovals: procurement.filter((item) => item.status.includes("Pending")).length,
-    blockedVariances: procurement.filter((item) => item.status.includes("Blocked")).length,
+    activeStaff: db?.activeStaff ?? 247,
+    staleStaff: db?.staleStaff ?? staff.filter((member) => member.isStale).length,
+    pendingApprovals: db?.pendingApprovals ?? procurement.filter((item) => item.status.includes("Pending")).length,
+    blockedVariances: db?.blockedVariances ?? procurement.filter((item) => item.status.includes("Blocked")).length,
     releaseReadiness: Math.round((checked / releaseGates.length) * 100),
     systemPulse: 99.94,
-    lastSync: "Live · refreshed 42s ago",
+    lastSync: db ? `Live · ${new Date().toISOString()}` : "Live · refreshed 42s ago",
   }));
 });
 
-router.get("/staff", (_req, res) => {
-  res.json(ListStaffResponse.parse(staff));
+router.get("/staff", async (_req, res) => {
+  const db = await loadStaff();
+  res.json(ListStaffResponse.parse(db ?? staff));
 });
 
-router.patch("/staff/:id", (req, res) => {
+router.patch("/staff/:id", async (req, res) => {
   const params = UpdateStaffStatusParams.safeParse(req.params);
   const body = UpdateStaffStatusBody.safeParse(req.body);
   if (!params.success || !body.success) {
     res.status(400).json({ error: "Invalid staff status update" });
     return;
   }
-  const member = staff.find((item) => item.id === params.data.id);
+  const list = (await loadStaff()) ?? staff;
+  const member = list.find((item) => item.id === params.data.id);
   if (!member) {
     res.status(404).json({ error: "Staff member not found" });
     return;
   }
+  await updateStaffStatus(params.data.id, body.data.status);
   member.status = body.data.status;
   member.updatedAt = "just now";
   member.isStale = false;
@@ -110,17 +121,19 @@ router.patch("/release-gates/:id/check", (req, res) => {
   res.json(ToggleReleaseGateResponse.parse(gate));
 });
 
-router.get("/procurement", (_req, res) => {
-  res.json(ListProcurementRecordsResponse.parse(procurement));
+router.get("/procurement", async (_req, res) => {
+  const db = await loadProcurement();
+  res.json(ListProcurementRecordsResponse.parse(db ?? procurement));
 });
 
-router.patch("/procurement/:id/approve", (req, res) => {
+router.patch("/procurement/:id/approve", async (req, res) => {
   const params = ApproveProcurementParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: "Invalid procurement record" });
     return;
   }
-  const record = procurement.find((item) => item.id === params.data.id);
+  const list = (await loadProcurement()) ?? procurement;
+  const record = list.find((item) => item.id === params.data.id);
   if (!record) {
     res.status(404).json({ error: "Procurement record not found" });
     return;
@@ -129,6 +142,7 @@ router.patch("/procurement/:id/approve", (req, res) => {
     res.status(409).json({ error: "Resolve the financial variance before approval" });
     return;
   }
+  await approveProcurement(params.data.id);
   record.status = "Payment Approved";
   res.json(ApproveProcurementResponse.parse(record));
 });

@@ -9,6 +9,7 @@ export const staffStatuses = pgTable("staff_statuses", {
     .default(sql`uuid_generate_v4()`),
   userId: uuid("user_id")
     .notNull()
+    .unique()
     .references(() => profiles.id, { onDelete: "cascade" }),
   statusText: text("status_text").notNull(),
   activeTicketId: text("active_ticket_id"),

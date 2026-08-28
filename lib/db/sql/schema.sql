@@ -65,7 +65,7 @@ CREATE TABLE fx_rates (
 -- ---------------------------------------------------------------------
 CREATE TABLE staff_statuses (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL UNIQUE REFERENCES profiles(id) ON DELETE CASCADE,
     status_text TEXT NOT NULL,
     active_ticket_id TEXT,
     environment env_type DEFAULT 'SIT',
