@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -71,7 +71,7 @@ import {
   type TreasuryAnalytics,
 } from '@workspace/api-client-react';
 import { Toaster, toast } from 'sonner';
-import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+import { Link, Route, Switch, useLocation, useSearch, Router as WouterRouter } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
 
 const queryClient = new QueryClient();
@@ -97,6 +97,18 @@ const pageMeta: Record<string, { eyebrow: string; title: string; description: st
   '/compliance': { eyebrow: 'Risk / guidance', title: 'Compliance assistant', description: 'Ask a policy question. Get an answer with a source you can inspect.' },
   '/admin': { eyebrow: 'Governance / access', title: 'Administration', description: 'Access posture and an immutable trail of operational decisions.' },
 };
+
+function getCurrentGMT8Date() {
+  const d = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Hong_Kong',
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+  return formatter.format(d).toUpperCase().replace(/,/g, '');
+}
 
 function formatNumber(value?: number) {
   return typeof value === 'number' ? new Intl.NumberFormat('en-US').format(value) : '—';
@@ -160,6 +172,63 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
   </div>;
 }
 
+function GlobalSearch() {
+  const [query, setQuery] = useState('');
+  const [, setLocation] = useLocation();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (query.trim()) {
+      setLocation(`/compliance?q=${encodeURIComponent(query.trim())}`);
+      setQuery('');
+      inputRef.current?.blur();
+    }
+  };
+
+  return (
+    <form className="deepseek-search" onSubmit={handleSearch}>
+      <Search size={14} />
+      <input 
+        ref={inputRef}
+        value={query} 
+        onChange={e => setQuery(e.target.value)} 
+        placeholder="DeepSeek AI search..." 
+        data-testid="input-global-search"
+      />
+      <kbd>⌘K</kbd>
+    </form>
+  );
+}
+
+function DeputyToggle() {
+  const [active, setActive] = useState(false);
+  return (
+    <button 
+      className={`deputy-toggle ${active ? 'deputy-active' : ''}`}
+      onClick={() => {
+        setActive(!active);
+        toast.success(active ? 'Deputy mode disabled' : 'Deputy mode scheduled: Active');
+      }}
+      title="Scheduled Deputy Mode"
+      data-testid="button-deputy-toggle"
+    >
+      <UserRound size={14} /> {active ? 'Deputy On' : 'Deputy Off'}
+    </button>
+  );
+}
+
 function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -196,16 +265,25 @@ function Shell({ children }: { children: ReactNode }) {
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-scrim" />}
     <main className="main-shell">
       <header className="topbar">
-        <div className="topbar-left"><button className="mobile-menu" onClick={() => setMobileOpen(true)} data-testid="button-open-menu"><Menu size={20} /></button><span className="breadcrumb">Orbital <ChevronRight size={13} /> {meta.eyebrow.split(' / ')[0]}</span></div>
+        <div className="topbar-left">
+          <button className="mobile-menu" onClick={() => setMobileOpen(true)} data-testid="button-open-menu"><Menu size={20} /></button>
+          <span className="breadcrumb">Orbital <ChevronRight size={13} /> {meta.eyebrow.split(' / ')[0]}</span>
+        </div>
+        <div className="topbar-center">
+          <GlobalSearch />
+        </div>
         <div className="topbar-actions">
+          <DeputyToggle />
           <div className="sync-status"><span className="signal-dot" /> Live <span className="font-mono">09:42:18</span></div>
-          <button className="icon-button" aria-label="Search" data-testid="button-global-search"><Search size={17} /></button>
           <button className="icon-button notification-button" aria-label="Notifications" data-testid="button-notifications"><Bell size={17} /><i /></button>
-          <div className="top-avatar avatar">LC</div>
+          <div className="topbar-profile">
+            <span className="role-badge" data-testid="text-role-badge">Head of IT</span>
+            <div className="top-avatar avatar">LC</div>
+          </div>
         </div>
       </header>
       <div className="page-content">
-        <div className="page-intro animate-in"><div><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="page-intro-side"><span className="font-mono">FRI 14 JUN 2024</span><button className="button button-outline" onClick={() => toast.success('View refreshed')} data-testid="button-refresh-view"><RefreshCw size={14} /> Refresh view</button></div></div>
+        <div className="page-intro animate-in"><div><span className="eyebrow">{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.description}</p></div><div className="page-intro-side"><span className="font-mono">{getCurrentGMT8Date()}</span><button className="button button-outline" onClick={() => toast.success('View refreshed')} data-testid="button-refresh-view"><RefreshCw size={14} /> Refresh view</button></div></div>
         {children}
       </div>
     </main>
@@ -354,12 +432,34 @@ function CitationCard({ citation }: { citation: ComplianceAnswer['citations'][nu
 }
 
 function CompliancePage() {
-  const [queryText, setQueryText] = useState('');
+  const searchString = useSearch();
+  const searchParams = new URLSearchParams(searchString);
+  const initialQuery = searchParams.get('q') || '';
+  const [queryText, setQueryText] = useState(initialQuery);
   const search = useSearchCompliance();
   const answer = search.data as ComplianceAnswer | undefined;
-  const ask = () => { if (!queryText.trim()) return; search.mutate({ data: { query: queryText.trim() } }, { onSuccess: () => toast.success('Guidance retrieved'), onError: () => toast.error('Could not search policy guidance') }); };
-  return <div className="page-stack compliance-page"><section className="compliance-hero panel signal-grid"><div className="compliance-orb"><Sparkles size={20} /></div><div><span className="eyebrow">Verified policy search</span><h2>What decision are you making?</h2><p>Ask in plain language. Orbital searches internal policy and returns cited guidance for review.</p></div><div className="compliance-search"><Search size={17} /><input value={queryText} onChange={e => setQueryText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') ask(); }} placeholder="e.g. Can a vendor access production data during UAT?" data-testid="input-compliance-query" /><button className="button button-primary" onClick={ask} disabled={search.isPending || !queryText.trim()} data-testid="button-search-compliance">{search.isPending ? 'Searching' : 'Search guidance'}<Send size={14} /></button></div></section>
-    {search.isError && <ErrorState onRetry={ask} />}
+  
+  const hasRunInitial = useRef(false);
+  
+  const ask = useCallback((q: string) => { 
+    if (!q.trim()) return; 
+    search.mutate({ data: { query: q.trim() } }, { 
+      onSuccess: () => toast.success('Guidance retrieved'), 
+      onError: () => toast.error('Could not search policy guidance') 
+    }); 
+  }, [search.mutate]);
+
+  useEffect(() => {
+    if (initialQuery && !hasRunInitial.current) {
+      hasRunInitial.current = true;
+      ask(initialQuery);
+    }
+  }, [initialQuery, ask]);
+
+  const handleAsk = () => ask(queryText);
+
+  return <div className="page-stack compliance-page"><section className="compliance-hero panel signal-grid"><div className="compliance-orb"><Sparkles size={20} /></div><div><span className="eyebrow">Verified policy search</span><h2>What decision are you making?</h2><p>Ask in plain language. Orbital searches internal policy and returns cited guidance for review.</p></div><div className="compliance-search"><Search size={17} /><input value={queryText} onChange={e => setQueryText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') handleAsk(); }} placeholder="e.g. Can a vendor access production data during UAT?" data-testid="input-compliance-query" /><button className="button button-primary" onClick={handleAsk} disabled={search.isPending || !queryText.trim()} data-testid="button-search-compliance">{search.isPending ? 'Searching' : 'Search guidance'}<Send size={14} /></button></div></section>
+    {search.isError && <ErrorState onRetry={handleAsk} />}
     {!answer && !search.isPending && <section className="compliance-empty"><BookOpen size={22} /><strong>Answers carry their evidence</strong><p>Start with a policy question. Your results will show confidence and the exact document excerpt behind the answer.</p><div className="question-chips"><button onClick={() => setQueryText('What are the approval controls for production access?')} data-testid="button-suggest-access">Production access controls</button><button onClick={() => setQueryText('When is a vendor security review required?')} data-testid="button-suggest-vendor">Vendor security review</button><button onClick={() => setQueryText('What evidence is needed for release handover?')} data-testid="button-suggest-release">Release evidence</button></div></section>}
     {search.isPending && <section className="panel"><LoadingRows count={3} /></section>}
     {answer && <div className="answer-grid"><section className="panel answer-card"><div className="answer-top"><span className="eyebrow">Policy answer</span><span className="confidence"><span style={{ width: `${answer.confidence * 100}%` }} /> {Math.round(answer.confidence * 100)}% confidence</span></div><p className="answer-copy">{answer.answer}</p><div className="answer-foot"><ShieldCheck size={15} /> Grounded in {answer.citations.length} cited source{answer.citations.length === 1 ? '' : 's'} <button className="button button-quiet" onClick={() => setQueryText('')} data-testid="button-clear-answer">Clear</button></div></section><section className="panel"><SectionHeading eyebrow="Evidence trail" title="Citations" /><div className="citation-list">{answer.citations.length ? answer.citations.map((citation, i) => <CitationCard citation={citation} key={`${citation.document}-${i}`} />) : <EmptyState title="No citations returned" detail="Ask a narrower policy question for source evidence." icon={FileCheck2} />}</div></section></div>}

@@ -1,10 +1,11 @@
-# [Project name]
+# IT Operations Control Tower
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Enterprise command center for staff operations, release governance, procurement approvals, treasury allocation, compliance guidance, and immutable audit activity.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/it-operations-control-tower run dev` — run the dashboard through its managed workflow
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -22,15 +23,20 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/it-operations-control-tower/src/App.tsx` — dashboard routes and interaction surfaces
+- `artifacts/it-operations-control-tower/src/index.css` — product theme and responsive styling
+- `artifacts/api-server/src/routes/operations.ts` — operations API and representative data
+- `lib/api-spec/openapi.yaml` — source of truth for dashboard API contracts
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The first build uses representative API-backed data so every workflow is usable before production integrations are connected.
+- Generated OpenAPI hooks are the frontend boundary; keep contract changes in `lib/api-spec/openapi.yaml` and regenerate before use.
+- DeepSeek, Jira, Supabase, 2FA, and vendor API connectivity remain production integration work; do not expose provider credentials in the browser.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+The app provides a cross-domain command center, staff shift board, environment release checklist, PR/PO approval workflow, treasury analytics, cited compliance search, and access/audit controls.
 
 ## User preferences
 
@@ -38,7 +44,8 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Run API codegen after every OpenAPI change.
+- Start app services through their managed workflows so `PORT` and `BASE_PATH` are provided.
 
 ## Pointers
 
