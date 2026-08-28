@@ -24,7 +24,7 @@ CREATE TYPE pr_po_status AS ENUM ('PR_DRAFT', 'PR_APPROVED', 'PO_ISSUED', 'MILES
 CREATE TABLE teams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     team_name TEXT NOT NULL,
-    team_lead_id UUID REFERENCES profiles(id),  -- backfilled after profiles (guardrail B)
+    team_lead_id UUID,                          -- FK added after profiles exist (guardrail B)
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -35,7 +35,7 @@ CREATE TABLE profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     full_name TEXT NOT NULL,
     role user_role NOT NULL DEFAULT 'IT_COLLEAGUE',
-    team_id UUID REFERENCES teams(id),          -- FK added after tables exist (guardrail B)
+    team_id UUID,                            -- FK added after tables exist (guardrail B)
     region region_code NOT NULL DEFAULT 'HK',
     deputy_for_user_id UUID REFERENCES profiles(id),
     on_leave BOOLEAN DEFAULT FALSE,
@@ -45,6 +45,9 @@ CREATE TABLE profiles (
 -- Break the circular FK as recommended (guardrail B): create teams with
 -- team_lead_id NULL, create all profiles, then add the profiles.team_id FK.
 ALTER TABLE profiles ADD CONSTRAINT profiles_team_id_fkey FOREIGN KEY (team_id) REFERENCES teams(id);
+
+-- Add teams.team_lead_id FK only after profiles exists (guardrail B).
+ALTER TABLE teams ADD CONSTRAINT teams_team_lead_id_fkey FOREIGN KEY (team_lead_id) REFERENCES profiles(id);
 
 -- ---------------------------------------------------------------------
 -- Frozen FX Rates
@@ -340,10 +343,12 @@ END;
 $$;
 
 -- Schedule every 15 minutes (requires the pg_cron extension & access)
+-- Note: use a distinct dollar-quote tag for the job SQL so it does not
+-- prematurely close the outer DO $$ ... $$ body.
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    PERFORM cron.schedule('mark-stale-staff', '*/15 * * * *', $$SELECT mark_stale_staff()$$);
+    PERFORM cron.schedule('mark-stale-staff', '*/15 * * * *', $cron$SELECT mark_stale_staff()$cron$);
   END IF;
 END $$;
 
@@ -357,7 +362,7 @@ BEGIN
   SELECT COALESCE(SUM(percentage_share),0) INTO total
     FROM cost_allocations WHERE procurement_id = NEW.procurement_id;
   IF total > 100 THEN
-    RAISE EXCEPTION 'Cost allocation totals exceed 100% for this procurement';
+    RAISE EXCEPTION 'Cost allocation totals exceed 100%% for this procurement';
   END IF;
   RETURN NEW;
 END;
