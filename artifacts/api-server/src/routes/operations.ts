@@ -16,6 +16,7 @@ import {
   UpdateStaffStatusParams,
   UpdateStaffStatusResponse,
 } from "@workspace/api-zod";
+import { deepseek } from "../integrations/deepseek";
 
 const router: IRouter = Router();
 
@@ -154,20 +155,14 @@ router.get("/treasury", (_req, res) => {
   }));
 });
 
-router.post("/compliance/search", (req, res) => {
+router.post("/compliance/search", async (req, res) => {
   const body = SearchComplianceBody.safeParse(req.body);
   if (!body.success) {
     res.status(400).json({ error: "Enter a compliance question" });
     return;
   }
-  res.json(SearchComplianceResponse.parse({
-    answer: "Production changes require completed UAT evidence, an approved rollback plan, named technical and business owners, and Change Advisory Board authorization before the deployment window opens. Emergency changes may use the expedited path, but retrospective review is mandatory within one business day.",
-    confidence: 0.94,
-    citations: [
-      { document: "IT Procedures Manual v3.2", section: "4.1 Production Release Control", page: 28, excerpt: "No production release may proceed without recorded UAT sign-off, rollback readiness, and CAB authorization." },
-      { document: "IT Procedures Manual v3.2", section: "4.3 Emergency Change Path", page: 31, excerpt: "Emergency implementation must be followed by retrospective review within one business day." },
-    ],
-  }));
+  const result = await deepseek.search(body.data.query);
+  res.json(SearchComplianceResponse.parse(result));
 });
 
 router.get("/audit-logs", (_req, res) => {

@@ -73,6 +73,14 @@ import {
 import { Toaster, toast } from 'sonner';
 import { Link, Route, Switch, useLocation, useSearch, Router as WouterRouter } from 'wouter';
 import { ErrorBoundary } from '@/components/error-boundary';
+import {
+  useIntegrationHealth,
+  useJiraTickets,
+  useVendorSubmissions,
+  type IntegrationStatus,
+  type JiraTicket,
+  type VendorSubmission,
+} from '@/hooks/use-integrations';
 
 const queryClient = new QueryClient();
 
@@ -229,6 +237,36 @@ function DeputyToggle() {
   );
 }
 
+function IntegrationPulse() {
+  const healthQuery = useIntegrationHealth();
+  const statuses = healthQuery.data?.integrations ?? [];
+  const configuredOk = statuses.filter((s: IntegrationStatus) => s.status === 'ok').length;
+  const total = statuses.length;
+  const connected = statuses.filter((s: IntegrationStatus) => s.configured).length;
+  return (
+    <div className="pulse-mini">
+      <div className="pulse-mini-heading">
+        <span className="signal-dot" /> Integrations{' '}
+        <span className="font-mono">{healthQuery.isLoading ? '...' : `${configuredOk}/${total || 0}`}</span>
+      </div>
+      <div className="pulse-bars">
+        {statuses.length
+          ? statuses.map((s: IntegrationStatus, i: number) => (
+              <i
+                key={s.name}
+                style={{
+                  height: s.status === 'ok' ? 92 : s.status === 'error' ? 30 : 55,
+                  background: s.status === 'ok' ? 'var(--accent)' : s.status === 'error' ? '#e5484d' : undefined,
+                }}
+              />
+            ))
+          : [40, 55, 45, 60].map((h, i) => <i style={{ height: h }} key={i} />)}
+      </div>
+      <small>{healthQuery.isLoading ? 'Checking service feeds…' : `${connected} of ${total || 0} services configured`}</small>
+    </div>
+  );
+}
+
 function Shell({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -254,11 +292,7 @@ function Shell({ children }: { children: ReactNode }) {
         </Link>)}
       </nav>
       <div className="sidebar-lower">
-        <div className="pulse-mini">
-          <div className="pulse-mini-heading"><span className="signal-dot" /> System pulse <span className="font-mono">97.4</span></div>
-          <div className="pulse-bars">{[34, 48, 39, 60, 51, 70, 66, 82, 72, 91, 84, 96].map((height, i) => <i style={{ height }} key={i} />)}</div>
-          <small>All critical services reporting</small>
-        </div>
+        <IntegrationPulse />
         <button className="profile-row" data-testid="button-profile"><span className="avatar avatar-lime">LC</span><span><strong>Leah Chan</strong><small>Head of IT</small></span><MoreHorizontal size={16} /></button>
       </div>
     </aside>
@@ -335,7 +369,26 @@ function DashboardPage() {
         {recentStaff.map(member => <div className="table-row" key={member.id} data-testid={`row-activity-${member.id}`}><span className="person-cell"><span className="avatar">{member.initials}</span><span><b>{member.name}</b><small>{member.role}</small></span></span><span>{member.team}<small>{member.region}</small></span><span className="font-mono">{member.environment || '—'}</span><span><StatusPill value={member.status} /></span><span className="font-mono muted-label">{formatTime(member.updatedAt)}</span></div>)}
       </div> : <EmptyState title="No activity yet" detail="The staff feed has not returned any monitored updates." />}
     </section>
+    <JiraQueueSection />
   </div>;
+}
+
+function JiraQueueSection() {
+  const jira = useJiraTickets();
+  const tickets = jira.data?.tickets ?? [];
+  return (
+    <section className="panel animate-in">
+      <SectionHeading
+        eyebrow="Jira work queue"
+        title="Live tickets"
+        action={<span className="muted-label">Source: {jira.data?.source ?? '…'}</span>}
+      />
+      {jira.isLoading ? <LoadingRows count={3} /> : tickets.length ? <div className="activity-table">
+        <div className="table-head"><span>Key</span><span>Summary</span><span>Status</span><span>Env</span><span>Assignee</span></div>
+        {tickets.map((t: JiraTicket) => <div className="table-row" key={t.id} data-testid={`row-jira-${t.key}`}><span className="font-mono"><b>{t.key}</b></span><span>{t.summary}</span><span><StatusPill value={t.status} /></span><span className="font-mono">{t.environment}</span><span>{t.assignee}<small>{t.updatedAt}</small></span></div>)}
+      </div> : <EmptyState title="No tickets" detail="Jira is not configured yet." icon={ClipboardCheck} />}
+    </section>
+  );
 }
 
 function StaffPage() {
@@ -397,7 +450,26 @@ function ProcurementPage() {
   return <div className="page-stack">
     <div className="mini-metrics"><div className="mini-metric"><span>Open records</span><strong>{formatNumber(records.length)}</strong></div><div className="mini-metric mini-amber"><span>Pending review</span><strong>{formatNumber(records.filter(r => r.status.toLowerCase().includes('pending')).length)}</strong></div><div className="mini-metric mini-coral"><span>Variance flags</span><strong>{formatNumber(varianceCount)}</strong></div><div className="mini-metric mini-teal"><span>In workflow</span><strong>{formatMoney(records.reduce((sum, r) => sum + (r.hkdAmount || 0), 0))}</strong></div></div>
     <section className="panel"><div className="toolbar-inner"><div className="search-field"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor, PR, PO" data-testid="input-search-procurement" /></div><div className="segmented">{statuses.map(value => <button className={filter === value ? 'segment-active' : ''} onClick={() => setFilter(value)} key={value} data-testid={`button-filter-${value.toLowerCase().replace(/\s+/g, '-')}`}>{value}</button>)}</div></div>{query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.isLoading ? <LoadingRows count={5} /> : !filtered.length ? <EmptyState title={records.length ? 'No matching records' : 'No procurement records'} detail={records.length ? 'Try a different vendor, reference, or status.' : 'Purchase requests will appear when the workflow feed returns.'} icon={ClipboardCheck} /> : <div className="procurement-table"><div className="table-head procurement-head"><span>Reference</span><span>Vendor</span><span>Region</span><span>Amount</span><span>Match</span><span>State</span><span /></div>{filtered.map(record => <div className="table-row procurement-row" key={record.id} data-testid={`row-procurement-${record.id}`}><span><b className="font-mono">{record.prNumber}</b><small className="font-mono">{record.poNumber || 'PO pending'}</small></span><span><b>{record.vendor}</b><small>Created {formatDate(record.createdAt)}</small></span><span>{record.region}</span><span><b>{formatMoney(record.amount, record.currency)}</b><small>{formatMoney(record.hkdAmount, 'HKD')} equivalent</small></span><span><StatusPill value={record.match} testId={`status-match-${record.id}`} /></span><span><StatusPill value={record.status} testId={`status-procurement-${record.id}`} /></span>{record.status.toLowerCase().includes('pending') ? <button className="row-action row-action-approve" onClick={() => approve.mutate({ id: record.id }, { onSuccess: () => { void client.invalidateQueries({ queryKey: getListProcurementRecordsQueryKey() }); toast.success(`${record.prNumber} approved`); }, onError: () => toast.error('Approval failed') })} disabled={approve.isPending} data-testid={`button-approve-${record.id}`}><Check size={14} /> Approve</button> : <span className="muted-label">—</span>}</div>)}</div>}</section>
+    <VendorSubmissionsSection />
   </div>;
+}
+
+function VendorSubmissionsSection() {
+  const vendorQuery = useVendorSubmissions();
+  const submissions = vendorQuery.data?.submissions ?? [];
+  return (
+    <section className="panel animate-in">
+      <SectionHeading
+        eyebrow="Vendor API"
+        title="Incoming submissions"
+        action={<span className="muted-label">Source: {vendorQuery.data?.source ?? '…'}</span>}
+      />
+      {vendorQuery.isLoading ? <LoadingRows count={3} /> : submissions.length ? <div className="activity-table">
+        <div className="table-head"><span>Type</span><span>PO</span><span>Amount</span><span>Vendor</span><span>Submitted</span></div>
+        {submissions.map((s: VendorSubmission, i: number) => <div className="table-row" key={`${s.poNumber}-${i}`}><span><StatusPill value={s.type} /></span><span className="font-mono"><b>{s.poNumber}</b></span><span><b>{formatMoney(s.amount, 'HKD')}</b></span><span className="font-mono">{s.vendorId}</span><span className="muted-label">{s.submittedAt}</span></div>)}
+      </div> : <EmptyState title="No submissions" detail="The vendor API is not configured yet." icon={ClipboardCheck} />}
+    </section>
+  );
 }
 
 function PaymentChart({ data }: { data: TreasuryAnalytics['monthlyPayments'] }) {
