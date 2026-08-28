@@ -6,6 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface HealthStatus {
+export interface StaffStatusUpdate {
   status: string;
 }

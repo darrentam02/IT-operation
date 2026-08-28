@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "IT Operations Control Tower"
+description = "An enterprise IT operations dashboard for monitoring staff shifts, release readiness, procurement approvals, treasury allocation, compliance guidance, and audit activity across regional business units."
+version = "1.0.0"
+id = "artifacts/it-operations-control-tower"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21727
+
+[services.development]
+run = "pnpm --filter @workspace/it-operations-control-tower run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/it-operations-control-tower", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/it-operations-control-tower/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21727"
+BASE_PATH = "/"

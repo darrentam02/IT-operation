@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: operations
+    description: IT operations dashboard data
 paths:
   /healthz:
     get:
@@ -24,6 +26,164 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [operations]
+      summary: Get dashboard overview
+      responses:
+        "200":
+          description: Dashboard overview metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [operations]
+      summary: List monitored staff
+      responses:
+        "200":
+          description: Staff shift board rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StaffMember"
+  /staff/{id}:
+    patch:
+      operationId: updateStaffStatus
+      tags: [operations]
+      summary: Update a staff member's status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffStatusUpdate"
+      responses:
+        "200":
+          description: Updated staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+  /release-gates:
+    get:
+      operationId: listReleaseGates
+      tags: [operations]
+      summary: List environment release gates
+      responses:
+        "200":
+          description: Release gate checklist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReleaseGate"
+  /release-gates/{id}/check:
+    patch:
+      operationId: toggleReleaseGate
+      tags: [operations]
+      summary: Check or uncheck a release gate item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated release gate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseGate"
+  /procurement:
+    get:
+      operationId: listProcurementRecords
+      tags: [operations]
+      summary: List procurement workflow records
+      responses:
+        "200":
+          description: Procurement workflow records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcurementRecord"
+  /procurement/{id}/approve:
+    patch:
+      operationId: approveProcurement
+      tags: [operations]
+      summary: Approve a procurement record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+  /treasury:
+    get:
+      operationId: getTreasuryAnalytics
+      tags: [operations]
+      summary: Get treasury and cost allocation analytics
+      responses:
+        "200":
+          description: Treasury analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryAnalytics"
+  /compliance/search:
+    post:
+      operationId: searchCompliance
+      tags: [operations]
+      summary: Search verified compliance guidance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ComplianceSearchInput"
+      responses:
+        "200":
+          description: Compliance answer with paragraph citations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ComplianceAnswer"
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [operations]
+      summary: List immutable audit log entries
+      responses:
+        "200":
+          description: Audit activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +193,135 @@ components:
           type: string
       required:
         - status
+    DashboardSummary:
+      type: object
+      required: [activeStaff, staleStaff, pendingApprovals, blockedVariances, releaseReadiness]
+      properties:
+        activeStaff: { type: number }
+        staleStaff: { type: number }
+        pendingApprovals: { type: number }
+        blockedVariances: { type: number }
+        releaseReadiness: { type: number }
+        systemPulse: { type: number }
+        lastSync: { type: string }
+    StaffMember:
+      type: object
+      required: [id, name, initials, role, team, region, status, ticket, environment, eta, updatedAt, isStale]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        initials: { type: string }
+        role: { type: string }
+        team: { type: string }
+        region: { type: string }
+        status: { type: string }
+        ticket: { type: string }
+        environment: { type: string }
+        eta: { type: string }
+        updatedAt: { type: string }
+        isStale: { type: boolean }
+    StaffStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    ReleaseGate:
+      type: object
+      required: [id, environment, title, owner, due, checked, risk]
+      properties:
+        id: { type: string }
+        environment: { type: string }
+        title: { type: string }
+        owner: { type: string }
+        due: { type: string }
+        checked: { type: boolean }
+        risk: { type: string }
+    ProcurementRecord:
+      type: object
+      required: [id, prNumber, poNumber, vendor, region, amount, currency, hkdAmount, status, match, createdAt]
+      properties:
+        id: { type: string }
+        prNumber: { type: string }
+        poNumber: { type: string }
+        vendor: { type: string }
+        region: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        hkdAmount: { type: number }
+        status: { type: string }
+        match: { type: string }
+        createdAt: { type: string }
+    TreasuryAnalytics:
+      type: object
+      required: [monthlyPayments, businessUnits, fxRates, totalYtd, varianceRate]
+      properties:
+        monthlyPayments:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyPayment"
+        businessUnits:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusinessUnitAllocation"
+        fxRates:
+          type: array
+          items:
+            $ref: "#/components/schemas/FxRate"
+        totalYtd: { type: number }
+        varianceRate: { type: number }
+    MonthlyPayment:
+      type: object
+      required: [month, paid, committed]
+      properties:
+        month: { type: string }
+        paid: { type: number }
+        committed: { type: number }
+    BusinessUnitAllocation:
+      type: object
+      required: [name, value, color]
+      properties:
+        name: { type: string }
+        value: { type: number }
+        color: { type: string }
+    FxRate:
+      type: object
+      required: [currency, rate, delta]
+      properties:
+        currency: { type: string }
+        rate: { type: number }
+        delta: { type: number }
+    ComplianceSearchInput:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string, minLength: 1 }
+    ComplianceAnswer:
+      type: object
+      required: [answer, confidence, citations]
+      properties:
+        answer: { type: string }
+        confidence: { type: number }
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+    Citation:
+      type: object
+      required: [document, section, page, excerpt]
+      properties:
+        document: { type: string }
+        section: { type: string }
+        page: { type: number }
+        excerpt: { type: string }
+    AuditLog:
+      type: object
+      required: [id, actor, action, target, timestamp, region, deputy]
+      properties:
+        id: { type: string }
+        actor: { type: string }
+        action: { type: string }
+        target: { type: string }
+        timestamp: { type: string }
+        region: { type: string }
+        deputy: { type: boolean }
 
