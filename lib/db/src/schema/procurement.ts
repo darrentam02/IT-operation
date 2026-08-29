@@ -12,6 +12,7 @@ import {
 import { sql } from "drizzle-orm";
 import { regionCode, prPoStatus } from "./enums";
 import { profiles } from "./profiles";
+import { budgetLines } from "./budget";
 
 export const vendors = pgTable(
   "vendors",
@@ -43,6 +44,7 @@ export const procurementRecords = pgTable(
     vendorId: uuid("vendor_id")
       .notNull()
       .references(() => vendors.id),
+    budgetLineId: uuid("budget_line_id").references(() => budgetLines.id),
     region: regionCode("region").notNull(),
     localCurrency: varchar("local_currency", { length: 3 }).notNull(),
     localAmount: numeric("local_amount", { precision: 15, scale: 2 }).notNull(),

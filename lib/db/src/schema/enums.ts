@@ -23,3 +23,10 @@ export const prPoStatus = pgEnum("pr_po_status", [
   "PAYMENT_APPROVED",
   "PAID",
 ]);
+
+export const budgetCategory = pgEnum("budget_category", [
+  "HARDWARE",
+  "SOFTWARE",
+  "DATA",
+  "SERVICES",
+]);

@@ -74,21 +74,30 @@ INSERT INTO vendors (id, vendor_name, region, contact, payment_terms, tax_id) VA
   ('20000000-0000-0000-0000-000000000006', 'PacificWorks Telecom',        'HK', 'finance@pacificworks.hk',     'NET 15', 'HK-87654321');
 
 -- ---------------------------------------------------------------------
--- 5. Procurement records (frozen FX + tiered approvers; explicit UUIDs)
+-- 5. Budget Lines (2026 IT Budget — allocated, incurred, paid)
 -- ---------------------------------------------------------------------
-INSERT INTO procurement_records
-  (id, pr_number, po_number, vendor_id, region, local_currency, local_amount, hkd_amount, fx_rate, status,
-   created_by, level_1_approver, level_2_approver, level_3_approver)
-VALUES
-  ('30000000-0000-0000-0000-000000000001', 'PR-2026-0001', 'PO-2026-0101', '20000000-0000-0000-0000-000000000001', 'MY', 'MYR', 420000, 700000, 1.6667, 'PO_ISSUED',
-   '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL),
-  ('30000000-0000-0000-0000-000000000002', 'PR-2026-0002', 'PO-2026-0102', '20000000-0000-0000-0000-000000000002', 'HK', 'HKD', 185000, 185000, 1.0000, 'PR_APPROVED',
-   '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', NULL, NULL),
-  ('30000000-0000-0000-0000-000000000003', 'PR-2026-0003', NULL,            '20000000-0000-0000-0000-000000000004', 'ID', 'IDR', 9800000000, 2000000, 0.0002041, 'VARIANCE_BLOCKED',
-   '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL);
+INSERT INTO budget_lines (id, fiscal_year, category, description, allocated_amount, incurred_amount, paid_amount, created_by) VALUES
+  ('40000000-0000-0000-0000-000000000001', 2026, 'HARDWARE', 'Server/Storage/Network refresh',  5000000, 0, 0, '7937447c-090e-4248-885b-0798763e5994'),
+  ('40000000-0000-0000-0000-000000000002', 2026, 'SOFTWARE', 'SaaS licences / subscriptions',   3000000, 0, 0, '7937447c-090e-4248-885b-0798763e5994'),
+  ('40000000-0000-0000-0000-000000000003', 2026, 'DATA',     'Data platform / analytics',       2000000, 0, 0, '7937447c-090e-4248-885b-0798763e5994'),
+  ('40000000-0000-0000-0000-000000000004', 2026, 'SERVICES', 'Professional services / support', 1500000, 0, 0, '7937447c-090e-4248-885b-0798763e5994');
 
 -- ---------------------------------------------------------------------
--- 6. Cost allocations (each procurement sums to 100%)
+-- 6. Procurement records (frozen FX + tiered approvers; explicit UUIDs + budget_line_id)
+-- ---------------------------------------------------------------------
+INSERT INTO procurement_records
+  (id, pr_number, po_number, vendor_id, budget_line_id, region, local_currency, local_amount, hkd_amount, fx_rate, status,
+    created_by, level_1_approver, level_2_approver, level_3_approver)
+VALUES
+  ('30000000-0000-0000-0000-000000000001', 'PR-2026-0001', 'PO-2026-0101', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'MY', 'MYR', 420000, 700000, 1.6667, 'PO_ISSUED',
+    '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL),
+  ('30000000-0000-0000-0000-000000000002', 'PR-2026-0002', 'PO-2026-0102', '20000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'HK', 'HKD', 185000, 185000, 1.0000, 'PR_APPROVED',
+    '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', NULL, NULL),
+  ('30000000-0000-0000-0000-000000000003', 'PR-2026-0003', NULL,            '20000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', 'ID', 'IDR', 9800000000, 2000000, 0.0002041, 'VARIANCE_BLOCKED',
+    '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL);
+
+-- ---------------------------------------------------------------------
+-- 7. Cost allocations (each procurement sums to 100%)
 -- ---------------------------------------------------------------------
 INSERT INTO cost_allocations (procurement_id, business_unit, percentage_share) VALUES
   ('30000000-0000-0000-0000-000000000001', 'Enterprise Platform', 40),
@@ -99,7 +108,7 @@ INSERT INTO cost_allocations (procurement_id, business_unit, percentage_share) V
   ('30000000-0000-0000-0000-000000000003', 'End-User Computing',  40);
 
 -- ---------------------------------------------------------------------
--- 7. Payment schedules
+-- 8. Payment schedules
 -- ---------------------------------------------------------------------
 INSERT INTO payment_schedules (procurement_id, due_date, amount, is_variance_detected) VALUES
   ('30000000-0000-0000-0000-000000000001', '2026-09-15', 280000,  FALSE),

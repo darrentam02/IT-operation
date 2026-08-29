@@ -52,6 +52,14 @@ Build an enterprise-grade IT Operations Dashboard and Vendor Management Portal u
 - A single PR/PO allocates percentage share across **8 Business Units**.
 - Database constraint enforces `SUM(allocation) == 100%`.
 
+### Budget-First Procurement Flow (IT CapEx/OpEx)
+- **Budget allocation at fiscal year start:** Head of IT defines yearly IT budget by category (HARDWARE, SOFTWARE, DATA, SERVICES) via CSV/Excel upload or manual entry. Budget stored in `budget_lines` (fiscal_year + category unique).
+- **PR creation requires budget_line_id:** Every PR/PO must reference a budget line. System validates `allocated_amount >= incurred_amount + PR.hkd_amount` before allowing PR_APPROVED.
+- **Incurred tracking (auto):** On PR status → `PR_APPROVED` or `PO_ISSUED`, trigger increments `budget_lines.incurred_amount += PR.hkd_amount`. On status revert, decrements.
+- **Paid tracking (auto):** On `payment_schedules.paid_at` set, trigger increments `budget_lines.paid_amount += payment.amount`.
+- **Budget vs Actual dashboard:** Yearly rollup showing Allocated / Incurred / Paid / Remaining per category. Exports to CSV/Excel.
+- **IT-only scope:** Budget categories restricted to IT CapEx/OpEx; Finance Auditor read-only; Head of IT (SUPER_ADMIN/DEPUTY) manages budget lines.
+
 ### Dashboard & Reporting Metrics
 - **Key KPIs:** total payments by month, pending approvals, variance flags, BU cost breakdown.
 - **Date ranges:** MTD, YTD, rolling 30 days, rolling 90 days.
@@ -337,6 +345,7 @@ AS $$ BEGIN   RETURN QUERY   SELECT     kb.id,     kb.document_title,     kb.sec
 | 5 | **Supabase Storage** | PDF upload → trigger chunking → pgvector embeddings | Storage webhook → Edge Function → pgvector insert | Service Role Key | ⬜ **NOT STARTED** |
 | 6 | **Supabase Realtime** | 1-min staff status broadcast, procurement updates | Channel subscriptions on `staff_statuses`, `procurement_records` | Anon / Auth JWT | 🟡 **PARTIAL (channel infra exists, not subscribed)** |
 | 7 | **pgvector / HNSW** | Vector similarity search for RAG | `match_knowledge_base` RPC + HNSW index on `knowledge_base_vectors.embedding` | Service Role / Auth | 🟡 **PARTIAL (schema exists, index missing)** |
+| 8 | **Budget Import API** | CSV/Excel upload for yearly IT budget (fiscal_year, category, allocated_amount) | `POST /api/budget/import`, `GET /api/budget/summary?year=2026`, `GET /api/budget/export?year=2026` | JWT (SUPER_ADMIN/DEPUTY) | ⬜ **NOT STARTED** |
 
 ### Integration Architecture Summary
 
@@ -397,6 +406,14 @@ Jira API   Vendor API  DeepSeek    pgvector    Supabase
 - **Embed:** Edge Function calls embedding model → inserts into `knowledge_base_vectors`
 - **Index:** HNSW on `embedding` column (maintained via `CREATE INDEX ... USING hnsw`)
 
+#### Budget Import API (IT Budget Management)
+- **Endpoint:** `POST /api/budget/import` — multipart/form-data (CSV/Excel) with columns: `fiscal_year`, `category` (HARDWARE|SOFTWARE|DATA|SERVICES), `allocated_amount`, optional `description`. Upserts into `budget_lines` on (fiscal_year, category).
+- **Endpoint:** `GET /api/budget/summary?year=2026` — returns yearly rollup: category, allocated, incurred, paid, remaining.
+- **Endpoint:** `GET /api/budget/export?year=2026` — returns CSV/Excel download of budget vs actual.
+- **Auth:** JWT with role SUPER_ADMIN or DEPUTY_HEAD_OF_IT (Finance Auditor read-only via separate endpoint).
+- **Validation:** Row-level upsert on unique (fiscal_year, category); allocated_amount >= 0; category enum check.
+- **Trigger:** On successful import, return count of upserted rows + any validation errors.
+
 ---
 
 ## 12. Agent Guardrails / Gotchas (READ FIRST before coding)
@@ -428,6 +445,8 @@ Same as v2 — see `prompt_v2.md` §11 for full list. Key integration-specific g
 | Migration strategy (`post-merge.sh` no auto-push; `pnpm db:migrate` one-off) | ✅ Implemented |
 | Replit deployment | ✅ Live at `https://it-operations-control-tower.replit.app/` |
 | Replit Secrets (DB, Supabase, DeepSeek) | ⚠️ Set by user (not in repo) |
+| Budget lines table + triggers + RLS | ✅ Schema & seed committed |
+| Budget import / summary / export API | ⬜ Not started |
 | Jira API integration | ⬜ Not started |
 | Vendor API integration | ⬜ Not started |
 | DeepSeek RAG (Edge Function + pgvector) | ⬜ Not started |

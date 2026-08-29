@@ -6,3 +6,4 @@ export * from "./staff";
 export * from "./procurement";
 export * from "./knowledge";
 export * from "./audit";
+export * from "./budget";

@@ -61,6 +61,30 @@ CREATE TABLE fx_rates (
 );
 
 -- ---------------------------------------------------------------------
+-- Budget Lines (IT CapEx/OpEx — yearly, category: HARDWARE/SOFTWARE/DATA/SERVICES)
+-- Budget first: allocated at year start, incurred on PR approval, paid on payment.
+-- ---------------------------------------------------------------------
+CREATE TYPE budget_category AS ENUM ('HARDWARE', 'SOFTWARE', 'DATA', 'SERVICES');
+
+CREATE TABLE budget_lines (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    fiscal_year INT NOT NULL,
+    category budget_category NOT NULL,
+    description TEXT,
+    allocated_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+    incurred_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,   -- sum of approved PR hkda amounts
+    paid_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,       -- sum of paid payment_schedules
+    created_by UUID REFERENCES profiles(id),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (fiscal_year, category)
+);
+
+-- Trigger: update incurred_amount when procurement_record status reaches PR_APPROVED/PO_ISSUED
+-- Trigger: update paid_amount when payment_schedules.paid_at is set
+-- (Implemented in app logic + trigger; see guardrail I equivalent)
+
+-- ---------------------------------------------------------------------
 -- Real-Time Staff Statuses
 -- ---------------------------------------------------------------------
 CREATE TABLE staff_statuses (
@@ -98,6 +122,7 @@ CREATE TABLE procurement_records (
     pr_number TEXT UNIQUE NOT NULL,
     po_number TEXT UNIQUE,
     vendor_id UUID NOT NULL REFERENCES vendors(id),
+    budget_line_id UUID REFERENCES budget_lines(id),
     region region_code NOT NULL,
     local_currency VARCHAR(3) NOT NULL,
     local_amount NUMERIC(15, 2) NOT NULL,
@@ -181,6 +206,7 @@ ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fx_rates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_base_vectors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE budget_lines ENABLE ROW LEVEL SECURITY;
 
 -- Helper: is the current user an admin (SUPER_ADMIN / DEPUTY_HEAD_OF_IT / FINANCE_AUDITOR)?
 CREATE OR REPLACE FUNCTION is_admin_user()
@@ -264,6 +290,15 @@ CREATE POLICY vendor_update_admin ON vendors FOR UPDATE USING (
 -- ============ fx_rates ============
 CREATE POLICY fx_select_all ON fx_rates FOR SELECT USING (true);
 CREATE POLICY fx_insert_admin ON fx_rates FOR INSERT WITH CHECK (is_admin_user());
+
+-- ============ budget_lines ============
+-- Head of IT (SUPER_ADMIN/DEPUTY) manages budget; FINANCE_AUDITOR read-only; others no access
+CREATE POLICY budget_select ON budget_lines FOR SELECT USING (
+  is_admin_user()
+  OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'FINANCE_AUDITOR')
+);
+CREATE POLICY budget_insert_admin ON budget_lines FOR INSERT WITH CHECK (is_admin_user());
+CREATE POLICY budget_update_admin ON budget_lines FOR UPDATE USING (is_admin_user());
 
 -- ============ knowledge_base_vectors ============
 -- Vector search runs via SECURITY DEFINER function; direct select for admins
@@ -379,13 +414,88 @@ FOR EACH ROW EXECUTE FUNCTION enforce_allocation_total();
 -- =====================================================================
 
 -- =====================================================================
+-- Budget Lines: auto-maintain incurred_amount (on PR approval) and paid_amount (on payment)
+-- =====================================================================
+CREATE OR REPLACE FUNCTION update_budget_incurred()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  bl_id uuid;
+  pr_hkd numeric;
+BEGIN
+  IF NEW.status IN ('PR_APPROVED', 'PO_ISSUED') AND (OLD.status IS NULL OR OLD.status NOT IN ('PR_APPROVED', 'PO_ISSUED')) THEN
+    IF NEW.budget_line_id IS NOT NULL THEN
+      pr_hkd := COALESCE(NEW.hkd_amount, 0);
+      UPDATE budget_lines
+         SET incurred_amount = incurred_amount + pr_hkd,
+             updated_at = NOW()
+       WHERE id = NEW.budget_line_id;
+    END IF;
+  ELSIF OLD.status IN ('PR_APPROVED', 'PO_ISSUED') AND NEW.status NOT IN ('PR_APPROVED', 'PO_ISSUED') THEN
+    -- status moved back from approved -> decrement
+    IF OLD.budget_line_id IS NOT NULL THEN
+      pr_hkd := COALESCE(OLD.hkd_amount, 0);
+      UPDATE budget_lines
+         SET incurred_amount = GREATEST(incurred_amount - pr_hkd, 0),
+             updated_at = NOW()
+       WHERE id = OLD.budget_line_id;
+    END IF;
+  ELSIF NEW.budget_line_id IS DISTINCT FROM OLD.budget_line_id THEN
+    -- budget_line changed: decrement old, increment new
+    IF OLD.budget_line_id IS NOT NULL AND OLD.status IN ('PR_APPROVED', 'PO_ISSUED') THEN
+      pr_hkd := COALESCE(OLD.hkd_amount, 0);
+      UPDATE budget_lines
+         SET incurred_amount = GREATEST(incurred_amount - pr_hkd, 0),
+             updated_at = NOW()
+       WHERE id = OLD.budget_line_id;
+    END IF;
+    IF NEW.budget_line_id IS NOT NULL AND NEW.status IN ('PR_APPROVED', 'PO_ISSUED') THEN
+      pr_hkd := COALESCE(NEW.hkd_amount, 0);
+      UPDATE budget_lines
+         SET incurred_amount = incurred_amount + pr_hkd,
+             updated_at = NOW()
+       WHERE id = NEW.budget_line_id;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_budget_incurred ON procurement_records;
+CREATE TRIGGER trg_budget_incurred
+AFTER UPDATE ON procurement_records
+FOR EACH ROW EXECUTE FUNCTION update_budget_incurred();
+
+-- Update paid_amount when payment_schedules.paid_at is set
+CREATE OR REPLACE FUNCTION update_budget_paid()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.paid_at IS NOT NULL AND (OLD.paid_at IS NULL OR OLD.paid_at <> NEW.paid_at) THEN
+    UPDATE budget_lines bl
+       SET paid_amount = paid_amount + NEW.amount,
+           updated_at = NOW()
+      FROM procurement_records pr
+     WHERE pr.id = NEW.procurement_id
+       AND bl.id = pr.budget_line_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_budget_paid ON payment_schedules;
+CREATE TRIGGER trg_budget_paid
+AFTER UPDATE ON payment_schedules
+FOR EACH ROW EXECUTE FUNCTION update_budget_paid();
+
+-- =====================================================================
 -- Indexes for hot query paths
 -- =====================================================================
 CREATE INDEX idx_staff_statuses_user ON staff_statuses(user_id);
 CREATE INDEX idx_staff_statuses_updated ON staff_statuses(updated_at);
 CREATE INDEX idx_proc_vendor ON procurement_records(vendor_id);
 CREATE INDEX idx_proc_status ON procurement_records(status);
+CREATE INDEX idx_proc_budget ON procurement_records(budget_line_id);
 CREATE INDEX idx_alloc_proc ON cost_allocations(procurement_id);
 CREATE INDEX idx_pay_proc ON payment_schedules(procurement_id);
 CREATE INDEX idx_audit_actor ON audit_logs(actor_id);
 CREATE INDEX idx_audit_created ON audit_logs(created_at);
+CREATE INDEX idx_budget_year_cat ON budget_lines(fiscal_year, category);
