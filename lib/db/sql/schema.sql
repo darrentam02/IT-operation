@@ -17,6 +17,9 @@ CREATE TYPE user_role AS ENUM ('SUPER_ADMIN', 'DEPUTY_HEAD_OF_IT', 'TEAM_LEAD', 
 CREATE TYPE region_code AS ENUM ('HK', 'CN', 'MY', 'ID');
 CREATE TYPE env_type AS ENUM ('SIT', 'UAT', 'STAGING', 'PROD');
 CREATE TYPE pr_po_status AS ENUM ('PR_DRAFT', 'PR_APPROVED', 'PO_ISSUED', 'MILESTONE_RECEIVED', 'INVOICE_PENDING', 'VARIANCE_BLOCKED', 'PAYMENT_APPROVED', 'PAID');
+CREATE TYPE budget_category AS ENUM ('HARDWARE', 'SOFTWARE', 'DATA', 'SERVICES');
+CREATE TYPE review_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+CREATE TYPE three_way_match_status AS ENUM ('PENDING', 'MATCHED', 'PRICE_VARIANCE', 'SHIPPING_TAX_VARIANCE', 'BLOCKED');
 
 -- ---------------------------------------------------------------------
 -- Teams
@@ -121,6 +124,7 @@ CREATE TABLE procurement_records (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     pr_number TEXT UNIQUE NOT NULL,
     po_number TEXT UNIQUE,
+    project_code TEXT NOT NULL,
     vendor_id UUID NOT NULL REFERENCES vendors(id),
     budget_line_id UUID REFERENCES budget_lines(id),
     region region_code NOT NULL,
@@ -128,15 +132,29 @@ CREATE TABLE procurement_records (
     local_amount NUMERIC(15, 2) NOT NULL,
     hkd_amount NUMERIC(15, 2) NOT NULL,
     fx_rate NUMERIC(18, 6) NOT NULL,
-    payment_terms TEXT,
+    payment_terms TEXT,                     -- e.g., 'NET 60', 'MILESTONE 3:4:3'
+    expected_settlement_amount NUMERIC(15, 2),  -- expected total settlement in HKD
+    expected_settlement_month DATE,         -- expected settlement month (first day of month)
+    terms TEXT,                             -- detailed terms/conditions
     delivery_address TEXT,
     tax_id TEXT,
     status pr_po_status DEFAULT 'PR_DRAFT',
+    -- Legal & Security Review (required when hkd_amount > 100,000)
+    legal_review_required BOOLEAN DEFAULT FALSE,
+    security_review_required BOOLEAN DEFAULT FALSE,
+    legal_review_status review_status DEFAULT 'PENDING',
+    security_review_status review_status DEFAULT 'PENDING',
+    legal_review_by UUID REFERENCES profiles(id),
+    security_review_by UUID REFERENCES profiles(id),
+    legal_review_at TIMESTAMPTZ,
+    security_review_at TIMESTAMPTZ,
+    -- Approvers
     created_by UUID REFERENCES profiles(id),
     level_1_approver UUID REFERENCES profiles(id),
     level_2_approver UUID REFERENCES profiles(id),
     level_3_approver UUID REFERENCES profiles(id),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ---------------------------------------------------------------------
@@ -158,10 +176,52 @@ CREATE TABLE payment_schedules (
     procurement_id UUID REFERENCES procurement_records(id) ON DELETE CASCADE,
     due_date DATE NOT NULL,
     amount NUMERIC(15,2) NOT NULL,
+    -- Milestone tracking (e.g., 3:4:3 = milestone 1/3, 2/3, 3/3)
+    milestone_number INT,                   -- 1, 2, 3 for 3:4:3
+    milestone_description TEXT,             -- e.g., 'Design complete', 'UAT sign-off', 'Go-live'
+    is_milestone_payment BOOLEAN DEFAULT FALSE,
+    -- OCR Invoice Processing
+    ocr_invoice_data JSONB,                 -- extracted invoice data from OCR
+    invoice_amount NUMERIC(15, 2),          -- amount on vendor invoice (for 3-way match)
+    invoice_date DATE,
+    invoice_number TEXT,
+    -- Variance & Resolution
     is_variance_detected BOOLEAN DEFAULT FALSE,
+    variance_type TEXT,                     -- 'PRICE', 'SHIPPING_TAX', 'QUANTITY'
+    variance_amount NUMERIC(15, 2),
+    variance_resolution_notes TEXT,
+    variance_resolved_by UUID REFERENCES profiles(id),
+    variance_resolved_at TIMESTAMPTZ,
+    -- Dual Sign-off (for payments > 250,000 HKD)
     dual_signoff_head_id UUID REFERENCES profiles(id),
     dual_signoff_finance_id UUID REFERENCES profiles(id),
-    paid_at TIMESTAMPTZ
+    dual_signoff_at TIMESTAMPTZ,
+    -- Payment tracking
+    paid_at TIMESTAMPTZ,
+    paid_amount NUMERIC(15, 2),
+    payment_reference TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ---------------------------------------------------------------------
+-- Three-Way Match (PO vs Invoice vs Milestone Sign-off)
+-- ---------------------------------------------------------------------
+CREATE TABLE three_way_matches (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    procurement_id UUID NOT NULL REFERENCES procurement_records(id) ON DELETE CASCADE,
+    payment_schedule_id UUID REFERENCES payment_schedules(id) ON DELETE SET NULL,
+    po_amount NUMERIC(15, 2) NOT NULL,          -- from procurement_records.hkd_amount
+    invoice_amount NUMERIC(15, 2),              -- from payment_schedules.invoice_amount
+    milestone_amount NUMERIC(15, 2),            -- from payment_schedules.amount (milestone)
+    price_variance NUMERIC(15, 2) GENERATED ALWAYS AS (COALESCE(invoice_amount, 0) - po_amount) STORED,
+    shipping_tax_variance NUMERIC(15, 2),       -- shipping/tax difference
+    status three_way_match_status DEFAULT 'PENDING',
+    matched_at TIMESTAMPTZ,
+    matched_by UUID REFERENCES profiles(id),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ---------------------------------------------------------------------
@@ -299,6 +359,23 @@ CREATE POLICY budget_select ON budget_lines FOR SELECT USING (
 );
 CREATE POLICY budget_insert_admin ON budget_lines FOR INSERT WITH CHECK (is_admin_user());
 CREATE POLICY budget_update_admin ON budget_lines FOR UPDATE USING (is_admin_user());
+
+-- ============ three_way_matches ============
+-- Procurement creators, approvers, finance auditors, admins can view
+CREATE POLICY threeway_select ON three_way_matches FOR SELECT USING (
+  EXISTS (SELECT 1 FROM procurement_records pr WHERE pr.id = three_way_matches.procurement_id
+    AND (pr.created_by = auth.uid() OR pr.level_1_approver = auth.uid()
+         OR pr.level_2_approver = auth.uid() OR pr.level_3_approver = auth.uid()
+         OR is_admin_user()))
+  OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'FINANCE_AUDITOR')
+);
+-- Only admins and finance can create/update matches
+CREATE POLICY threeway_insert_admin ON three_way_matches FOR INSERT WITH CHECK (
+  is_admin_user() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'FINANCE_AUDITOR')
+);
+CREATE POLICY threeway_update_admin ON three_way_matches FOR UPDATE USING (
+  is_admin_user() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'FINANCE_AUDITOR')
+);
 
 -- ============ knowledge_base_vectors ============
 -- Vector search runs via SECURITY DEFINER function; direct select for admins
@@ -487,6 +564,195 @@ AFTER UPDATE ON payment_schedules
 FOR EACH ROW EXECUTE FUNCTION update_budget_paid();
 
 -- =====================================================================
+-- Procurement: auto-set legal/security review flags when HKD > 100,000
+-- =====================================================================
+CREATE OR REPLACE FUNCTION set_review_requirements()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  -- Auto-set review flags based on HKD amount
+  IF NEW.hkd_amount > 100000 THEN
+    NEW.legal_review_required := TRUE;
+    NEW.security_review_required := TRUE;
+    -- Set to PENDING if not already set
+    IF NEW.legal_review_status IS NULL OR NEW.legal_review_status = 'PENDING' THEN
+      NEW.legal_review_status := 'PENDING';
+    END IF;
+    IF NEW.security_review_status IS NULL OR NEW.security_review_status = 'PENDING' THEN
+      NEW.security_review_status := 'PENDING';
+    END IF;
+  ELSE
+    NEW.legal_review_required := FALSE;
+    NEW.security_review_required := FALSE;
+    NEW.legal_review_status := 'PENDING';
+    NEW.security_review_status := 'PENDING';
+  END IF;
+  NEW.updated_at := NOW();
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_review_requirements ON procurement_records;
+CREATE TRIGGER trg_review_requirements
+BEFORE INSERT OR UPDATE ON procurement_records
+FOR EACH ROW EXECUTE FUNCTION set_review_requirements();
+
+-- =====================================================================
+-- Three-Way Match: auto-create when invoice uploaded, validate variances
+-- Price variance tolerance: 0%, Shipping/Tax tolerance: ±2%
+-- =====================================================================
+CREATE OR REPLACE FUNCTION validate_three_way_match()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  pr_record RECORD;
+  price_variance_pct numeric;
+  shipping_tax_variance_pct numeric;
+  match_status three_way_match_status;
+BEGIN
+  -- Only process when invoice_amount is set/updated
+  IF NEW.invoice_amount IS NOT NULL AND (OLD.invoice_amount IS NULL OR OLD.invoice_amount <> NEW.invoice_amount) THEN
+    -- Get the procurement record
+    SELECT * INTO pr_record FROM procurement_records WHERE id = NEW.procurement_id;
+    
+    -- Calculate variances
+    -- Price variance: invoice_amount vs po_amount (hkd_amount) - tolerance 0%
+    price_variance_pct := CASE 
+      WHEN pr_record.hkd_amount > 0 
+      THEN abs((NEW.invoice_amount - pr_record.hkd_amount) / pr_record.hkd_amount * 100)
+      ELSE 0 
+    END;
+    
+    -- Shipping/Tax variance - tolerance ±2%
+    -- Assuming shipping_tax_variance is tracked separately in variance_amount
+    shipping_tax_variance_pct := CASE 
+      WHEN pr_record.hkd_amount > 0 AND NEW.variance_amount IS NOT NULL
+      THEN abs(NEW.variance_amount / pr_record.hkd_amount * 100)
+      ELSE 0 
+    END;
+    
+    -- Determine match status
+    IF price_variance_pct > 0 THEN
+      match_status := 'PRICE_VARIANCE';
+    ELSIF shipping_tax_variance_pct > 2 THEN
+      match_status := 'SHIPPING_TAX_VARIANCE';
+    ELSE
+      match_status := 'MATCHED';
+    END IF;
+    
+    -- Upsert three_way_match record
+    INSERT INTO three_way_matches (
+      procurement_id, payment_schedule_id, po_amount, invoice_amount, 
+      milestone_amount, shipping_tax_variance, status, matched_at, matched_by
+    ) VALUES (
+      NEW.procurement_id, NEW.id, pr_record.hkd_amount, NEW.invoice_amount,
+      NEW.amount, COALESCE(NEW.variance_amount, 0),
+      match_status,
+      CASE WHEN match_status = 'MATCHED' THEN NOW() END,
+      CASE WHEN match_status = 'MATCHED' THEN NEW.variance_resolved_by END
+    )
+    ON CONFLICT (procurement_id, payment_schedule_id) DO UPDATE SET
+      invoice_amount = EXCLUDED.invoice_amount,
+      milestone_amount = EXCLUDED.milestone_amount,
+      shipping_tax_variance = EXCLUDED.shipping_tax_variance,
+      status = EXCLUDED.status,
+      matched_at = EXCLUDED.matched_at,
+      matched_by = EXCLUDED.matched_by,
+      updated_at = NOW();
+    
+    -- If variance detected, update payment_schedule and procurement status
+    IF match_status IN ('PRICE_VARIANCE', 'SHIPPING_TAX_VARIANCE') THEN
+      NEW.is_variance_detected := TRUE;
+      NEW.variance_type := CASE 
+        WHEN match_status = 'PRICE_VARIANCE' THEN 'PRICE'
+        ELSE 'SHIPPING_TAX' 
+      END;
+      NEW.variance_amount := CASE 
+        WHEN match_status = 'PRICE_VARIANCE' 
+        THEN NEW.invoice_amount - pr_record.hkd_amount
+        ELSE NEW.variance_amount 
+      END;
+      
+      -- Update procurement status to VARIANCE_BLOCKED if not already
+      UPDATE procurement_records 
+        SET status = 'VARIANCE_BLOCKED', updated_at = NOW()
+      WHERE id = NEW.procurement_id AND status NOT IN ('VARIANCE_BLOCKED', 'PAYMENT_APPROVED', 'PAID');
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_three_way_match ON payment_schedules;
+CREATE TRIGGER trg_three_way_match
+AFTER INSERT OR UPDATE ON payment_schedules
+FOR EACH ROW EXECUTE FUNCTION validate_three_way_match();
+
+-- =====================================================================
+-- Audit logging for procurement status changes
+-- =====================================================================
+CREATE OR REPLACE FUNCTION audit_procurement_status()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.status IS DISTINCT FROM OLD.status THEN
+    INSERT INTO audit_logs (actor_id, action_type, target_resource, old_value, new_value)
+    VALUES (
+      COALESCE(NEW.level_1_approver, NEW.level_2_approver, NEW.level_3_approver, NEW.created_by, 'system'),
+      'PROCUREMENT_STATUS_CHANGE',
+      'procurement_records',
+      jsonb_build_object('status', OLD.status, 'hkd_amount', OLD.hkd_amount),
+      jsonb_build_object('status', NEW.status, 'hkd_amount', NEW.hkd_amount)
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_audit_procurement ON procurement_records;
+CREATE TRIGGER trg_audit_procurement
+AFTER UPDATE ON procurement_records
+FOR EACH ROW EXECUTE FUNCTION audit_procurement_status();
+
+-- =====================================================================
+-- Audit logging for payment schedule changes (variance, dual sign-off, payment)
+-- =====================================================================
+CREATE OR REPLACE FUNCTION audit_payment_schedule()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.is_variance_detected IS DISTINCT FROM OLD.is_variance_detected
+     OR NEW.dual_signoff_head_id IS DISTINCT FROM OLD.dual_signoff_head_id
+     OR NEW.dual_signoff_finance_id IS DISTINCT FROM OLD.dual_signoff_finance_id
+     OR NEW.paid_at IS DISTINCT FROM OLD.paid_at
+     OR NEW.variance_resolved_at IS DISTINCT FROM OLD.variance_resolved_at THEN
+    INSERT INTO audit_logs (actor_id, action_type, target_resource, old_value, new_value)
+    VALUES (
+      COALESCE(NEW.variance_resolved_by, NEW.dual_signoff_head_id, NEW.dual_signoff_finance_id, NEW.paid_amount::uuid, 'system'),
+      'PAYMENT_SCHEDULE_CHANGE',
+      'payment_schedules',
+      jsonb_build_object(
+        'is_variance_detected', OLD.is_variance_detected,
+        'dual_signoff_head_id', OLD.dual_signoff_head_id,
+        'dual_signoff_finance_id', OLD.dual_signoff_finance_id,
+        'paid_at', OLD.paid_at,
+        'variance_resolved_at', OLD.variance_resolved_at
+      ),
+      jsonb_build_object(
+        'is_variance_detected', NEW.is_variance_detected,
+        'dual_signoff_head_id', NEW.dual_signoff_head_id,
+        'dual_signoff_finance_id', NEW.dual_signoff_finance_id,
+        'paid_at', NEW.paid_at,
+        'variance_resolved_at', NEW.variance_resolved_at
+      )
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_audit_payment ON payment_schedules;
+CREATE TRIGGER trg_audit_payment
+AFTER UPDATE ON payment_schedules
+FOR EACH ROW EXECUTE FUNCTION audit_payment_schedule();
+
+-- =====================================================================
 -- Indexes for hot query paths
 -- =====================================================================
 CREATE INDEX idx_staff_statuses_user ON staff_statuses(user_id);
@@ -494,8 +760,14 @@ CREATE INDEX idx_staff_statuses_updated ON staff_statuses(updated_at);
 CREATE INDEX idx_proc_vendor ON procurement_records(vendor_id);
 CREATE INDEX idx_proc_status ON procurement_records(status);
 CREATE INDEX idx_proc_budget ON procurement_records(budget_line_id);
+CREATE INDEX idx_proc_project ON procurement_records(project_code);
+CREATE INDEX idx_proc_legal_review ON procurement_records(legal_review_status) WHERE legal_review_required;
+CREATE INDEX idx_proc_security_review ON procurement_records(security_review_status) WHERE security_review_required;
 CREATE INDEX idx_alloc_proc ON cost_allocations(procurement_id);
 CREATE INDEX idx_pay_proc ON payment_schedules(procurement_id);
+CREATE INDEX idx_pay_milestone ON payment_schedules(milestone_number) WHERE is_milestone_payment;
+CREATE INDEX idx_pay_variance ON payment_schedules(is_variance_detected) WHERE is_variance_detected;
+CREATE INDEX idx_threeway_proc ON three_way_matches(procurement_id);
 CREATE INDEX idx_audit_actor ON audit_logs(actor_id);
 CREATE INDEX idx_audit_created ON audit_logs(created_at);
 CREATE INDEX idx_budget_year_cat ON budget_lines(fiscal_year, category);

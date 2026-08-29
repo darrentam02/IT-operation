@@ -86,14 +86,21 @@ INSERT INTO budget_lines (id, fiscal_year, category, description, allocated_amou
 -- 6. Procurement records (frozen FX + tiered approvers; explicit UUIDs + budget_line_id)
 -- ---------------------------------------------------------------------
 INSERT INTO procurement_records
-  (id, pr_number, po_number, vendor_id, budget_line_id, region, local_currency, local_amount, hkd_amount, fx_rate, status,
+  (id, pr_number, po_number, project_code, vendor_id, budget_line_id, region, local_currency, local_amount, hkd_amount, fx_rate, status,
+    payment_terms, expected_settlement_amount, expected_settlement_month, terms,
     created_by, level_1_approver, level_2_approver, level_3_approver)
 VALUES
-  ('30000000-0000-0000-0000-000000000001', 'PR-2026-0001', 'PO-2026-0101', '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'MY', 'MYR', 420000, 700000, 1.6667, 'PO_ISSUED',
+  ('30000000-0000-0000-0000-000000000001', 'PR-2026-0001', 'PO-2026-0101', 'PROJ-IT-2026-001',
+    '20000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'MY', 'MYR', 420000, 700000, 1.6667, 'PO_ISSUED',
+    'MILESTONE 3:4:3', 700000, '2026-12-01', 'Hardware refresh for regional data centers',
     '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL),
-  ('30000000-0000-0000-0000-000000000002', 'PR-2026-0002', 'PO-2026-0102', '20000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'HK', 'HKD', 185000, 185000, 1.0000, 'PR_APPROVED',
+  ('30000000-0000-0000-0000-000000000002', 'PR-2026-0002', 'PO-2026-0102', 'PROJ-IT-2026-002',
+    '20000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'HK', 'HKD', 185000, 185000, 1.0000, 'PR_APPROVED',
+    'NET 60', 185000, '2026-09-01', 'Network equipment upgrade',
     '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', NULL, NULL),
-  ('30000000-0000-0000-0000-000000000003', 'PR-2026-0003', NULL,            '20000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', 'ID', 'IDR', 9800000000, 2000000, 0.0002041, 'VARIANCE_BLOCKED',
+  ('30000000-0000-0000-0000-000000000003', 'PR-2026-0003', NULL, 'PROJ-IT-2026-003',
+    '20000000-0000-0000-0000-000000000004', '40000000-0000-0000-0000-000000000001', 'ID', 'IDR', 9800000000, 2000000, 0.0002041, 'VARIANCE_BLOCKED',
+    'NET 30', 2000000, '2026-10-01', 'Storage hardware procurement',
     '7937447c-090e-4248-885b-0798763e5994', '57198c98-3a7b-4e16-b072-5c4c9dd31ffe', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL);
 
 -- ---------------------------------------------------------------------
@@ -108,16 +115,51 @@ INSERT INTO cost_allocations (procurement_id, business_unit, percentage_share) V
   ('30000000-0000-0000-0000-000000000003', 'End-User Computing',  40);
 
 -- ---------------------------------------------------------------------
--- 8. Payment schedules
+-- 8. Payment schedules (with milestones 3:4:3, OCR invoice data, variance)
 -- ---------------------------------------------------------------------
-INSERT INTO payment_schedules (procurement_id, due_date, amount, is_variance_detected) VALUES
-  ('30000000-0000-0000-0000-000000000001', '2026-09-15', 280000,  FALSE),
-  ('30000000-0000-0000-0000-000000000001', '2026-12-15', 420000,  FALSE),
-  ('30000000-0000-0000-0000-000000000002', '2026-08-30', 185000,  FALSE),
-  ('30000000-0000-0000-0000-000000000003', '2026-09-01', 2000000, TRUE);
+INSERT INTO payment_schedules 
+  (procurement_id, due_date, amount, milestone_number, milestone_description, is_milestone_payment,
+   invoice_amount, invoice_date, invoice_number, is_variance_detected, variance_type, variance_amount,
+   dual_signoff_head_id, dual_signoff_finance_id, paid_at, paid_amount, payment_reference)
+VALUES
+  -- PR-2026-0001: 3:4:3 milestones (280k, 420k) - no variance
+  ('30000000-0000-0000-0000-000000000001', '2026-09-15', 280000, 1, 'Design & procurement complete', TRUE,
+   280000, '2026-09-10', 'INV-2026-001', FALSE, NULL, NULL,
+   '7937447c-090e-4248-885b-0798763e5994', '0ebb310c-b241-48b0-9254-7b78f7634676', '2026-09-15', 280000, 'PAY-2026-001'),
+  ('30000000-0000-0000-0000-000000000001', '2026-12-15', 420000, 2, 'Delivery & UAT sign-off', TRUE,
+   420000, '2026-12-10', 'INV-2026-002', FALSE, NULL, NULL,
+   '7937447c-090e-4248-885b-0798763e5994', '0ebb310c-b241-48b0-9254-7b78f7634676', NULL, NULL, NULL),
+  -- PR-2026-0002: single payment NET 60 - no variance
+  ('30000000-0000-0000-0000-000000000002', '2026-08-30', 185000, NULL, NULL, FALSE,
+   185000, '2026-08-25', 'INV-2026-003', FALSE, NULL, NULL,
+   NULL, NULL, '2026-08-30', 185000, 'PAY-2026-003'),
+  -- PR-2026-0003: variance blocked - price variance
+  ('30000000-0000-0000-0000-000000000003', '2026-09-01', 2000000, NULL, NULL, FALSE,
+   2100000, '2026-08-28', 'INV-2026-004', TRUE, 'PRICE', 100000,
+   NULL, NULL, NULL, NULL, NULL);
+
+2100000, '2026-08-28', 'INV-2026-004', TRUE, 'PRICE', 100000,
+    NULL, NULL, NULL, NULL, NULL);
 
 -- ---------------------------------------------------------------------
--- 8. FX reference rates
+-- 9. Three-Way Match results (auto-generated by trigger)
+-- ---------------------------------------------------------------------
+INSERT INTO three_way_matches (procurement_id, payment_schedule_id, po_amount, invoice_amount, milestone_amount, shipping_tax_variance, status, matched_at, matched_by) VALUES
+  ('30000000-0000-0000-0000-000000000001', 
+   (SELECT id FROM payment_schedules WHERE procurement_id = '30000000-0000-0000-0000-000000000001' AND milestone_number = 1),
+   700000, 280000, 280000, 0, 'MATCHED', '2026-09-15', '7937447c-090e-4248-885b-0798763e5994'),
+  ('30000000-0000-0000-0000-000000000001', 
+   (SELECT id FROM payment_schedules WHERE procurement_id = '30000000-0000-0000-0000-000000000001' AND milestone_number = 2),
+   700000, 420000, 420000, 0, 'MATCHED', NULL, NULL),
+  ('30000000-0000-0000-0000-000000000002', 
+   (SELECT id FROM payment_schedules WHERE procurement_id = '30000000-0000-0000-0000-000000000002'),
+   185000, 185000, 185000, 0, 'MATCHED', '2026-08-30', '7937447c-090e-4248-885b-0798763e5994'),
+  ('30000000-0000-0000-0000-000000000003', 
+   (SELECT id FROM payment_schedules WHERE procurement_id = '30000000-0000-0000-0000-000000000003'),
+   2000000, 2100000, 2000000, 0, 'PRICE_VARIANCE', NULL, NULL);
+
+-- ---------------------------------------------------------------------
+-- 10. FX reference rates
 -- ---------------------------------------------------------------------
 INSERT INTO fx_rates (base_currency, quote_currency, rate) VALUES
   ('HKD', 'MYR', 0.5999),

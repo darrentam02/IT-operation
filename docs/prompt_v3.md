@@ -99,24 +99,70 @@ Build an enterprise-grade IT Operations Dashboard and Vendor Management Portal u
 
 ### PR/PO Record Fields
 In addition to financials, each PR/PO tracks:
-- Vendor contact
-- Delivery address
-- Payment terms
-- Tax ID
+- **Project code** (e.g., `PROJ-IT-2026-001`)
+- **Budget amount** (HKD) linked to `budget_lines` (fiscal year + category)
+- **Expected settlement amount** (HKD) and **expected settlement month**
+- **Payment terms** (e.g., `NET 60`, `MILESTONE 3:4:3`)
+- Vendor contact, delivery address, tax ID
+- **Legal review required** (auto-flag when HKD > 100,000)
+- **Security review required** (auto-flag when HKD > 100,000)
 - **GMT+8 timestamps** for all monitoring
+
+### PR/PO Workflow & Tiered Approvals
+**Status Flow:**
+```
+PR_DRAFT → PR_APPROVED → PO_ISSUED → MILESTONE_RECEIVED → INVOICE_PENDING 
+  → (VARIANCE_BLOCKED?) → PAYMENT_APPROVED → PAID
+```
+
+**Tiered Approval Matrix (per SOP):**
+- **Level 1 (Team Lead):** PR/PO ≤ HKD 100,000
+- **Level 2 (Deputy Head of IT):** HKD 100,001 – 500,000
+- **Level 3 (Head of IT / Deputy):** > HKD 500,000
+- **Dual-Control:** Payment overrides/schedule changes > HKD 250,000 require Head of IT + Finance Auditor sign-off
+- **Legal Review:** Mandatory for payments > HKD 100,000 (auto-flagged)
+- **Security Review:** Mandatory for payments > HKD 100,000 (auto-flagged)
+- **Separation of Duties:** Team Lead may approve own team's PR/POs up to Level 2
+
+**Legal & Security Review Workflow:**
+- Auto-triggered when `hkd_amount > 100,000` (via DB trigger)
+- Status: `PENDING` → `APPROVED` / `REJECTED`
+- Legal review by Legal team; Security review by Security team
+- Both must be `APPROVED` before PO can progress to `PO_ISSUED`
 
 ### Three-Way Matching Engine
 Auto-verifies **Approved PO Amount == Vendor Invoice Amount == Milestone Sign-off**.
-- Price variance tolerance: **0%**. Shipping/Tax tolerance: **±2%**.
-- Discrepancy -> state `Blocked: Financial Variance Detected` and flag Finance/Auditor role.
+- **Price variance tolerance:** **0%** (invoice amount must match PO HKD amount exactly)
+- **Shipping/Tax tolerance:** **±2%** of PO amount
+- **Discrepancy →** state `VARIANCE_BLOCKED`, flags Finance Auditor + Legal
+- **Variance resolution:** Finance team handles directly; legal consultation required for disputes
+
+### Milestone Payments
+- Standard structure: **3:4:3** (30% design/procurement, 40% delivery/UAT, 30% go-live)
+- Configurable per PR via `payment_terms` (e.g., `MILESTONE 3:4:3`)
+- Milestone sign-off confirmed by IT team (project lead)
+- Each milestone creates a `payment_schedules` entry with `milestone_number` and `milestone_description`
+
+### Payment Procedures
+- **Standard terms:** NET 60 (configurable per vendor)
+- **Invoice processing:** Auto OCR extraction → `payment_schedules.ocr_invoice_data` (JSONB)
+- **Invoice match:** Three-way match trigger validates on `invoice_amount` insert/update
+- **Variance handling:** 
+  - Price variance (0% tolerance) → `PRICE_VARIANCE` → `VARIANCE_BLOCKED`
+  - Shipping/Tax variance (±2% tolerance) → `SHIPPING_TAX_VARIANCE` → `VARIANCE_BLOCKED`
+  - Finance team resolves directly; legal consultation required for disputes
+  - Resolution updates `variance_resolved_by`, `variance_resolved_at`, `variance_resolution_notes`
+- **Dual sign-off** (Head of IT + Finance Auditor) required for payments > HKD 250,000
+- **Payment tracking:** `paid_at`, `paid_amount`, `payment_reference` recorded
+- **Audit trail:** All status changes, variance resolutions, dual sign-offs logged to `audit_logs` (immutable)
 
 ### Vendor API (100 external/outsourcing vendors)
-- **Authentication:** dedicated API key per vendor (100 vendors, each own key). ⚠️ **EXTERNAL API INTEGRATION NEEDED**
-- **Onboarding:** Head of IT + Finance create/onboard vendors and issue API keys.
-- **Data submitted by vendors:** invoices, delivery/milestone confirmation, PO acceptance.
-- **Invoice formats:** PDF invoice upload **OR** API-submitted data.
-- **Visibility:** vendors see only their own records (regional + vendor_id RLS isolation).
-- Vendor self-service portal available for viewing their own payment status.
+- **Authentication:** dedicated API key per vendor (HMAC-SHA256, stored as `api_key_hash`)
+- **Onboarding:** Head of IT + Finance create/onboard vendors and issue API keys
+- **Data submitted by vendors:** invoices (PDF upload or API), delivery/milestone confirmation, PO acceptance
+- **Invoice formats:** PDF upload (OCR processed) **OR** API-submitted structured data
+- **Visibility:** vendors see only their own records (regional + vendor_id RLS isolation)
+- Vendor self-service portal for viewing own payment status
 
 ---
 
@@ -446,6 +492,10 @@ Same as v2 — see `prompt_v2.md` §11 for full list. Key integration-specific g
 | Replit deployment | ✅ Live at `https://it-operations-control-tower.replit.app/` |
 | Replit Secrets (DB, Supabase, DeepSeek) | ⚠️ Set by user (not in repo) |
 | Budget lines table + triggers + RLS | ✅ Schema & seed committed |
+| **PR/PO workflow: tiered approvals, legal/security review, milestone tracking** | ✅ Schema, triggers, seed committed |
+| **Payment schedules: milestones 3:4:3, OCR invoice, variance, dual sign-off** | ✅ Schema, triggers, seed committed |
+| **Three-way match: auto-create, price 0% / shipping ±2%, variance block** | ✅ Schema, triggers, seed committed |
+| **Legal/security review auto-flag (HKD > 100k), audit logging** | ✅ Triggers committed |
 | Budget import / summary / export API | ⬜ Not started |
 | Jira API integration | ⬜ Not started |
 | Vendor API integration | ⬜ Not started |

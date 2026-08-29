@@ -30,3 +30,17 @@ export const budgetCategory = pgEnum("budget_category", [
   "DATA",
   "SERVICES",
 ]);
+
+export const reviewStatus = pgEnum("review_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+]);
+
+export const threeWayMatchStatus = pgEnum("three_way_match_status", [
+  "PENDING",
+  "MATCHED",
+  "PRICE_VARIANCE",
+  "SHIPPING_TAX_VARIANCE",
+  "BLOCKED",
+]);
