@@ -111,6 +111,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ProcurementPage as ProcurementWorkflowPage } from '@/procurement-workflow';
+import { VendorPage } from '@/pages/VendorPage';
 
 const queryClient = new QueryClient();
 
@@ -121,6 +122,7 @@ const navItems: { label: string; href: string; icon: IconType; note?: string }[]
   { label: 'Staff operations', href: '/staff', icon: UsersRound, note: '300' },
   { label: 'Release control', href: '/release', icon: PackageCheck },
   { label: 'Procurement', href: '/procurement', icon: ClipboardCheck },
+  { label: 'Vendor portal', href: '/vendor', icon: Globe2, note: 'external' },
   { label: 'Treasury', href: '/treasury', icon: WalletCards },
   { label: 'Compliance', href: '/compliance', icon: BookOpen },
   { label: 'Administration', href: '/admin', icon: LockKeyhole },
@@ -131,6 +133,7 @@ const pageMeta: Record<string, { eyebrow: string; title: string; description: st
   '/staff': { eyebrow: 'People / coverage', title: 'Staff operations', description: 'See who is active, where coverage is thin, and what needs a handoff.' },
   '/release': { eyebrow: 'Change / assurance', title: 'Release control', description: 'A release only moves when the evidence is ready.' },
   '/procurement': { eyebrow: 'Commercial / workflow', title: 'Procurement control', description: 'Approvals, purchase orders, and exceptions in one accountable queue.' },
+  '/vendor': { eyebrow: 'Supplier / self-service', title: 'Vendor portal', description: 'Purchase orders, milestone deliveries, and invoice submissions for external vendors.' },
   '/treasury': { eyebrow: 'Finance / allocation', title: 'Treasury overview', description: 'Payment velocity, business-unit allocation, and foreign exchange exposure.' },
   '/compliance': { eyebrow: 'Risk / guidance', title: 'Compliance assistant', description: 'Ask a policy question. Get an answer with a source you can inspect.' },
   '/admin': { eyebrow: 'Governance / access', title: 'Administration', description: 'Access posture and an immutable trail of operational decisions.' },
@@ -572,6 +575,7 @@ function Router() {
     <Route path="/staff" component={StaffPage} />
     <Route path="/release" component={ReleasePage} />
     <Route path="/procurement" component={ProcurementWorkflowPage} />
+    <Route path="/vendor" component={VendorPage} />
     <Route path="/treasury" component={TreasuryPage} />
     <Route path="/compliance" component={CompliancePage} />
     <Route path="/admin" component={AdminPage} />
