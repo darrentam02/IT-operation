@@ -41,7 +41,10 @@ CREATE TABLE profiles (
     team_id UUID,                            -- FK added after tables exist (guardrail B)
     region region_code NOT NULL DEFAULT 'HK',
     deputy_for_user_id UUID REFERENCES profiles(id),
-    on_leave BOOLEAN DEFAULT FALSE,
+    on_leave BOOLEAN DEFAULT FALSE,            -- deprecated; use date windows below
+    leave_start_date DATE,
+    leave_end_date DATE,
+    base_role user_role,                       -- reversible role while delegated
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -447,26 +450,79 @@ $$;
 GRANT EXECUTE ON FUNCTION match_knowledge_base(vector, float, int) TO anon, authenticated, service_role;
 
 -- =====================================================================
--- GUARDRAIL D: Deputy auto-activation on SUPER_ADMIN leave
+-- GUARDRAIL D: Deputy delegation via date-windowed leave + pg_cron
+--   Uses profiles.leave_start_date / leave_end_date (deterministic windows)
+--   and a reversible base_role column. The old boolean on_leave trigger was
+--   inverted (promoted the wrong person) and had no de-activation path.
 -- =====================================================================
-CREATE OR REPLACE FUNCTION activate_deputy_on_leave()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION reconcile_deputy_delegation()
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  deputy RECORD;
+  principal_id uuid;
+  w_start DATE;
+  w_end   DATE;
+  on_leave_now BOOLEAN;
 BEGIN
-  IF NEW.on_leave = TRUE AND OLD.on_leave = FALSE THEN
-    -- mark the linked deputy as a delegated authority holder
-    UPDATE profiles
-       SET role = 'DEPUTY_HEAD_OF_IT'
-     WHERE id = NEW.deputy_for_user_id;
-    INSERT INTO audit_logs (actor_id, action_type, target_resource, new_value, acted_as_deputy)
-    VALUES (NEW.id, 'DEPUTY_ACTIVATED', 'profiles', jsonb_build_object('deputy', NEW.deputy_for_user_id), NEW.deputy_for_user_id IS NOT NULL);
-  END IF;
-  RETURN NEW;
+  -- for every profile that names a principal they deputize for
+  FOR deputy IN
+    SELECT p.id AS deputy_id, p.role AS deputy_role, p.base_role AS base_role,
+           p.deputy_for_user_id AS principal_id
+      FROM profiles p
+     WHERE p.deputy_for_user_id IS NOT NULL
+  LOOP
+    principal_id := deputy.principal_id;
+    -- missing principal profile => w_start/w_end stay NULL => treated as off leave
+    SELECT leave_start_date, leave_end_date INTO w_start, w_end
+      FROM profiles WHERE id = principal_id;
+
+    on_leave_now := w_start IS NOT NULL
+                    AND CURRENT_DATE >= w_start
+                    AND CURRENT_DATE <= COALESCE(w_end, w_start);
+
+    IF on_leave_now THEN
+      -- ACTIVATE only on a role transition (avoids audit spam per run)
+      IF deputy.deputy_role IS DISTINCT FROM 'DEPUTY_HEAD_OF_IT' THEN
+        IF deputy.base_role IS NULL THEN
+          UPDATE profiles SET base_role = deputy.deputy_role WHERE id = deputy.deputy_id;
+        END IF;
+        UPDATE profiles SET role = 'DEPUTY_HEAD_OF_IT' WHERE id = deputy.deputy_id;
+        INSERT INTO audit_logs (actor_id, action_type, target_resource, new_value, acted_as_deputy)
+        VALUES (principal_id, 'DEPUTY_ACTIVATED', 'profiles',
+                jsonb_build_object(
+                  'deputy', deputy.deputy_id,
+                  'from',   to_char(w_start, 'YYYY-MM-DD'),
+                  'to',     to_char(COALESCE(w_end, w_start), 'YYYY-MM-DD')
+                ), TRUE);
+      END IF;
+    ELSE
+      -- DE-ACTIVATE only if we promoted them (base_role is set)
+      IF deputy.deputy_role = 'DEPUTY_HEAD_OF_IT' AND deputy.base_role IS NOT NULL THEN
+        UPDATE profiles SET role = deputy.base_role, base_role = NULL WHERE id = deputy.deputy_id;
+        INSERT INTO audit_logs (actor_id, action_type, target_resource, new_value, acted_as_deputy)
+        VALUES (principal_id, 'DEPUTY_DEACTIVATED', 'profiles',
+                jsonb_build_object('deputy', deputy.deputy_id, 'restored', deputy.base_role), TRUE);
+      END IF;
+    END IF;
+  END LOOP;
 END;
 $$;
-DROP TRIGGER IF EXISTS trg_deputy_on_leave ON profiles;
-CREATE TRIGGER trg_deputy_on_leave
-AFTER UPDATE OF on_leave ON profiles
-FOR EACH ROW EXECUTE FUNCTION activate_deputy_on_leave();
+
+-- Schedule every 5 minutes (requires the pg_cron extension & access).
+-- Note: use a distinct dollar-quote tag for the job SQL so it does not
+-- prematurely close the outer DO $$ ... $$ body.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'deputy-delegation') THEN
+      PERFORM cron.unschedule('deputy-delegation');
+    END IF;
+    PERFORM cron.schedule('deputy-delegation', '*/5 * * * *', $cron$SELECT reconcile_deputy_delegation()$cron$);
+    IF NOT EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'mark-stale-staff') THEN
+      PERFORM cron.schedule('mark-stale-staff', '*/15 * * * *', $cron$SELECT mark_stale_staff()$cron$);
+    END IF;
+  END IF;
+END $$;
 
 -- =====================================================================
 -- GUARDRAIL E: Stale staff heartbeat (updated > 4h or > 15 min in demo -> stale)

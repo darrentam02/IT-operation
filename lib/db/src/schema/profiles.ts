@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, timestamp, date } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { userRole, regionCode } from "./enums";
 
@@ -13,5 +13,8 @@ export const profiles = pgTable("profiles", {
   region: regionCode("region").notNull().default("HK"),
   deputyForUserId: uuid("deputy_for_user_id"),
   onLeave: boolean("on_leave").default(false),
+  leaveStartDate: date("leave_start_date"),
+  leaveEndDate: date("leave_end_date"),
+  baseRole: userRole("base_role"),
   createdAt: timestamp("created_at", { withTimezone: true }).default(sql`NOW()`),
 });

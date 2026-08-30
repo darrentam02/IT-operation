@@ -62,16 +62,21 @@ import {
   dualSignoff,
   getPaymentSchedule,
   getProcurementById,
+  getDeputyDelegation,
   getThreeWayMatch,
   listDlq,
   listPaymentSchedules,
   loadBudgetSummary,
   loadDashboardStats,
   loadProcurement,
+  listAuditLogs,
   loadStaff,
+  loadTreasuryAnalytics,
+  loadTreasuryLedger,
   markPaid,
   reprocessDlq,
   resolveVariance,
+  setDeputyLeaveWindow,
   submitInvoice,
   submitReview,
   updateStaffStatus,
@@ -82,6 +87,7 @@ import {
   withRetry,
 } from "../lib/resilience";
 import { logger } from "../lib/logger";
+import { buildTreasuryExport } from "../lib/treasury-export";
 
 const router: IRouter = Router();
 
@@ -209,8 +215,9 @@ router.patch("/procurement/:id/approve", async (req, res) => {
   res.json(ApproveProcurementResponse.parse(record));
 });
 
-router.get("/treasury", (_req, res) => {
-  res.json(GetTreasuryAnalyticsResponse.parse({
+router.get("/treasury", async (_req, res) => {
+  const db = await loadTreasuryAnalytics();
+  res.json(GetTreasuryAnalyticsResponse.parse(db ?? {
     monthlyPayments: [
       { month: "Mar", paid: 12.8, committed: 14.4 }, { month: "Apr", paid: 15.2, committed: 16.1 },
       { month: "May", paid: 13.7, committed: 15.6 }, { month: "Jun", paid: 18.4, committed: 19.2 },
@@ -231,6 +238,27 @@ router.get("/treasury", (_req, res) => {
   }));
 });
 
+router.get("/treasury/export", async (req, res) => {
+  const formatRaw = String(req.query.format || "csv").toLowerCase();
+  const format = formatRaw === "xlsx" || formatRaw === "pdf" ? formatRaw : "csv";
+  try {
+    const analytics = await loadTreasuryAnalytics();
+    const ledger = await loadTreasuryLedger();
+    if (!analytics || !ledger) {
+      res.status(503).json({ error: "Treasury data unavailable", code: "DATA_UNAVAILABLE" });
+      return;
+    }
+    const result = await buildTreasuryExport(analytics, ledger, format);
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(result.buffer);
+  } catch (error) {
+    logger.error({ error }, "treasury export failed");
+    res.status(500).json({ error: "Failed to generate treasury export" });
+  }
+});
+
 router.post("/compliance/search", async (req, res) => {
   const body = SearchComplianceBody.safeParse(req.body);
   if (!body.success) {
@@ -241,8 +269,43 @@ router.post("/compliance/search", async (req, res) => {
   res.json(SearchComplianceResponse.parse(result));
 });
 
-router.get("/audit-logs", (_req, res) => {
-  res.json(ListAuditLogsResponse.parse(auditLogs));
+router.get("/audit-logs", async (_req, res) => {
+  const db = await listAuditLogs();
+  res.json(ListAuditLogsResponse.parse(db ?? auditLogs));
+});
+
+router.get("/deputy/delegation", async (_req, res) => {
+  const db = await getDeputyDelegation();
+  res.json(db ?? {
+    principal: null,
+    deputy: null,
+    leaveStart: null,
+    leaveEnd: null,
+    active: false,
+    acting: false,
+  });
+});
+
+router.post("/deputy/delegation", async (req, res) => {
+  const body = (req.body ?? {}) as {
+    principalId?: string;
+    leaveStart?: string | null;
+    leaveEnd?: string | null;
+  };
+  if (!body.principalId) {
+    res.status(400).json({ error: "principalId is required" });
+    return;
+  }
+  const db = await setDeputyLeaveWindow(
+    String(body.principalId),
+    body.leaveStart ?? null,
+    body.leaveEnd ?? null,
+  );
+  if (!db) {
+    res.status(503).json({ error: "Deputy data unavailable", code: "DATA_UNAVAILABLE" });
+    return;
+  }
+  res.json(db);
 });
 
 // ---------------------------------------------------------------------

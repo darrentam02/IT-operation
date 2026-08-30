@@ -144,8 +144,10 @@ export function VendorMilestoneTracker({ data, client, onDataChange }: Props) {
       ))}
 
       {!data.pos.length && (
-        <div className="panel text-center py-10 text-sm text-muted-foreground">
-          No purchase orders for this vendor yet.
+        <div className="panel text-center py-12">
+          <div className="vendor-empty-icon"><PackageCheck size={22} /></div>
+          <p className="text-sm font-medium">No purchase orders yet</p>
+          <p className="text-xs text-muted-foreground mt-1">When procurement issues a PO to this vendor, it will appear here for acceptance, delivery confirmation, and invoicing.</p>
         </div>
       )}
 

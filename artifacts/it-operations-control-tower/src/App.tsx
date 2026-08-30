@@ -13,6 +13,9 @@ import {
   CircleDot,
   ClipboardCheck,
   Clock3,
+  Download,
+  FileSpreadsheet,
+  FileText,
   Command,
   Database,
   FileCheck2,
@@ -112,6 +115,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { ProcurementPage as ProcurementWorkflowPage } from '@/procurement-workflow';
 import { VendorPage } from '@/pages/VendorPage';
+import { CommandPalette, type PaletteAction } from '@/components/CommandPalette';
+import { DeputyToggle } from '@/components/DeputyToggle';
 
 const queryClient = new QueryClient();
 
@@ -213,63 +218,6 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
   </div>;
 }
 
-function GlobalSearch() {
-  const [query, setQuery] = useState('');
-  const [, setLocation] = useLocation();
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        inputRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (query.trim()) {
-      setLocation(`/compliance?q=${encodeURIComponent(query.trim())}`);
-      setQuery('');
-      inputRef.current?.blur();
-    }
-  };
-
-  return (
-    <form className="deepseek-search" onSubmit={handleSearch}>
-      <Search size={14} />
-      <input 
-        ref={inputRef}
-        value={query} 
-        onChange={e => setQuery(e.target.value)} 
-        placeholder="DeepSeek AI search..." 
-        data-testid="input-global-search"
-      />
-      <kbd>⌘K</kbd>
-    </form>
-  );
-}
-
-function DeputyToggle() {
-  const [active, setActive] = useState(false);
-  return (
-    <button 
-      className={`deputy-toggle ${active ? 'deputy-active' : ''}`}
-      onClick={() => {
-        setActive(!active);
-        toast.success(active ? 'Deputy mode disabled' : 'Deputy mode scheduled: Active');
-      }}
-      title="Scheduled Deputy Mode"
-      data-testid="button-deputy-toggle"
-    >
-      <UserRound size={14} /> {active ? 'Deputy On' : 'Deputy Off'}
-    </button>
-  );
-}
-
 function IntegrationPulse() {
   const healthQuery = useIntegrationHealth();
   const statuses = healthQuery.data?.integrations ?? [];
@@ -301,9 +249,36 @@ function IntegrationPulse() {
 }
 
 function Shell({ children }: { children: ReactNode }) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const meta = pageMeta[location] ?? pageMeta['/'];
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const paletteActions: PaletteAction[] = useMemo(() => {
+    const nav: PaletteAction[] = navItems.map((n) => ({
+      id: `nav-${n.href}`,
+      label: n.label,
+      hint: n.note ? `Navigate to ${n.label}` : undefined,
+      group: 'Surfaces',
+      run: () => setLocation(n.href),
+    }));
+    const quick: PaletteAction[] = [
+      { id: 'refresh', label: 'Refresh view', hint: 'Reload the current surface', group: 'Actions', run: () => toast.success('View refreshed') },
+      { id: 'compliance', label: 'Ask compliance', hint: 'Search policy guidance', group: 'Actions', run: () => setLocation('/compliance') },
+    ];
+    return [...nav, ...quick];
+  }, []);
   return <div className="app-shell min-h-[100dvh]">
     <aside className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
       <div className="brand">
@@ -337,7 +312,11 @@ function Shell({ children }: { children: ReactNode }) {
           <span className="breadcrumb">Orbital <ChevronRight size={13} /> {meta.eyebrow.split(' / ')[0]}</span>
         </div>
         <div className="topbar-center">
-          <GlobalSearch />
+          <button className="deepseek-search command-trigger" onClick={() => setCommandOpen(true)} data-testid="button-open-command">
+            <Search size={14} />
+            <span className="command-trigger-label">Search or jump to...</span>
+            <kbd>Ctrl K</kbd>
+          </button>
         </div>
         <div className="topbar-actions">
           <DeputyToggle />
@@ -354,6 +333,7 @@ function Shell({ children }: { children: ReactNode }) {
         {children}
       </div>
     </main>
+    <CommandPalette open={commandOpen} onClose={() => setCommandOpen(false)} actions={paletteActions} />
   </div>;
 }
 
@@ -509,7 +489,31 @@ function FxList({ data }: { data: FxRate[] }) {
 function TreasuryPage() {
   const query = useGetTreasuryAnalytics({ query: { queryKey: getGetTreasuryAnalyticsQueryKey(), refetchInterval: 60000 } });
   const data = query.data as TreasuryAnalytics | undefined;
-  return <div className="page-stack">{query.isError && <ErrorState onRetry={() => void query.refetch()} />}{query.isLoading ? <LoadingRows count={4} /> : data ? <>
+  const [exporting, setExporting] = useState<string | null>(null);
+  const handleExport = useCallback(async (format: 'csv' | 'xlsx' | 'pdf') => {
+    try {
+      setExporting(format);
+      const response = await fetch(`/api/treasury/export?format=${format}`);
+      if (!response.ok) throw new Error('export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      const disposition = response.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      anchor.download = match ? match[1] : `treasury-analytics.${format}`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Exported ${format.toUpperCase()} treasury report`);
+    } catch {
+      toast.error('Treasury export failed');
+    } finally {
+      setExporting(null);
+    }
+  }, []);
+  return <div className="page-stack">{query.isError && <ErrorState onRetry={() => void query.refetch()} />}{query.isLoading ? <LoadingRows count={4} /> : data ? <><div className="toolbar-inner export-toolbar"><div><span className="eyebrow">Reporting</span><h2 className="panel-title">Export treasury data</h2></div><div className="export-actions"><button className="button button-quiet" onClick={() => void handleExport('csv')} disabled={exporting !== null} data-testid="button-export-csv">{exporting === 'csv' ? 'Preparing...' : 'CSV'}<Download size={14} /></button><button className="button button-quiet" onClick={() => void handleExport('xlsx')} disabled={exporting !== null} data-testid="button-export-xlsx">{exporting === 'xlsx' ? 'Preparing...' : 'Excel'}<FileSpreadsheet size={14} /></button><button className="button button-quiet" onClick={() => void handleExport('pdf')} disabled={exporting !== null} data-testid="button-export-pdf">{exporting === 'pdf' ? 'Preparing...' : 'PDF'}<FileText size={14} /></button></div></div>
     <div className="treasury-kpis"><div className="treasury-total"><span className="eyebrow">YTD deployed</span><strong>{formatMoney(data.totalYtd, 'HKD')}</strong><small><span className="delta-up"><ArrowUpRight size={13} /> 8.4%</span> versus plan</small></div><div className="mini-metric"><span>Variance rate</span><strong>{data.varianceRate}%</strong><small>Within monitored tolerance</small></div><div className="mini-metric"><span>Payment cycles</span><strong>{data.monthlyPayments.length}</strong><small>Periods reported</small></div></div>
     <div className="treasury-grid"><section className="panel"><SectionHeading eyebrow="Cash movement" title="Paid vs committed" action={<div className="legend"><span><i className="legend-dot paid" /> Paid</span><span><i className="legend-dot committed" /> Committed</span></div>} /><PaymentChart data={data.monthlyPayments} /></section><section className="panel"><SectionHeading eyebrow="Cost allocation" title="Business units" /><AllocationList data={data.businessUnits} /></section></div>
     <section className="panel"><SectionHeading eyebrow="Market watch" title="FX reference rates" action={<span className="muted-label">Base currency HKD</span>} /><FxList data={data.fxRates} /></section>
@@ -558,10 +562,13 @@ function CompliancePage() {
 function AdminPage() {
   const query = useListAuditLogs({ query: { queryKey: getListAuditLogsQueryKey(), refetchInterval: 30000 } });
   const [search, setSearch] = useState('');
+  const [authority, setAuthority] = useState<'all' | 'deputy' | 'direct'>('all');
   const logs = (query.data as AuditLog[] | undefined) ?? [];
-  const filtered = logs.filter(log => `${log.actor} ${log.action} ${log.target} ${log.region}`.toLowerCase().includes(search.toLowerCase()));
+  const filtered = logs
+    .filter(log => `${log.actor} ${log.action} ${log.target} ${log.region}`.toLowerCase().includes(search.toLowerCase()))
+    .filter(log => authority === 'all' ? true : authority === 'deputy' ? log.deputy : !log.deputy);
   return <div className="page-stack"><div className="admin-cards"><div className="access-posture panel"><div className="posture-icon"><KeyRound size={18} /></div><div><span className="eyebrow">Access posture</span><h2>Controlled</h2><p>All privileged actions require named ownership.</p></div><StatusPill value="Monitored" /></div><div className="mini-metric"><span>Audit entries</span><strong>{formatNumber(logs.length)}</strong><small>Immutable records loaded</small></div><div className="mini-metric"><span>Deputy actions</span><strong>{formatNumber(logs.filter(log => log.deputy).length)}</strong><small>Acting on delegated authority</small></div></div>
-    <section className="panel"><div className="toolbar-inner"><div><SectionHeading eyebrow="Governance" title="Immutable audit log" /></div><div className="search-field"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actor, action, target" data-testid="input-search-audit" /><SlidersHorizontal size={15} /></div></div>{query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.isLoading ? <LoadingRows count={6} /> : !filtered.length ? <EmptyState title={logs.length ? 'No matching events' : 'No audit events'} detail={logs.length ? 'Try another actor, action, or target.' : 'Immutable events will appear when administrative activity is recorded.'} icon={LockKeyhole} /> : <div className="audit-table"><div className="table-head audit-head"><span>Actor</span><span>Action</span><span>Target</span><span>Region</span><span>Timestamp</span><span>Authority</span></div>{filtered.map(log => <div className="table-row audit-row" key={log.id} data-testid={`row-audit-${log.id}`}><span className="person-cell"><span className="avatar">{log.actor.split(' ').map(n => n[0]).slice(0, 2).join('')}</span><b>{log.actor}</b></span><span><StatusPill value={log.action} /></span><span className="font-mono">{log.target}</span><span>{log.region}</span><span className="font-mono">{formatDate(log.timestamp)} {formatTime(log.timestamp)}</span><span>{log.deputy ? <span className="deputy"><UserRound size={13} /> Deputy</span> : <span className="muted-label">Direct</span>}</span></div>)}</div>}</section></div>;
+    <section className="panel"><div className="toolbar-inner"><div><SectionHeading eyebrow="Governance" title="Immutable audit log" /></div><div className="audit-filters"><div className="segmented" data-testid="segmented-audit-authority">{(['all','deputy','direct'] as const).map(mode => <button key={mode} className={authority === mode ? 'segment-active' : ''} onClick={() => setAuthority(mode)} data-testid={`filter-audit-${mode}`}>{mode === 'all' ? 'All' : mode === 'deputy' ? 'Deputy' : 'Direct'}</button>)}</div><div className="search-field"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search actor, action, target" data-testid="input-search-audit" /><SlidersHorizontal size={15} /></div></div></div>{query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.isLoading ? <LoadingRows count={6} /> : !filtered.length ? <EmptyState title={logs.length ? 'No matching events' : 'No audit events'} detail={logs.length ? 'Try another actor, action, or target.' : 'Immutable events will appear when administrative activity is recorded.'} icon={LockKeyhole} /> : <div className="audit-table"><div className="table-head audit-head"><span>Actor</span><span>Action</span><span>Target</span><span>Region</span><span>Timestamp</span><span>Authority</span></div>{filtered.map(log => <div className="table-row audit-row" key={log.id} data-testid={`row-audit-${log.id}`}><span className="person-cell"><span className="avatar">{log.actor.split(' ').map(n => n[0]).slice(0, 2).join('')}</span><b>{log.actor}</b></span><span><StatusPill value={log.action} /></span><span className="font-mono">{log.target}</span><span>{log.region}</span><span className="font-mono">{formatDate(log.timestamp)} {formatTime(log.timestamp)}</span><span>{log.deputy ? <span className="deputy"><UserRound size={13} /> Deputy</span> : <span className="muted-label">Direct</span>}</span></div>)}</div>}</section></div>;
 }
 
 function RoutedErrorBoundary({ children }: { children: ReactNode }) {

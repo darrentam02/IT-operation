@@ -69,6 +69,21 @@ export function VendorPortalLayout({ data, client, onSignOut, onDataChange }: Pr
       </div>
 
       <section className="panel">
+        <div className="settlement-row">
+          <div className="settlement-head">
+            <span className="eyebrow">Settlement progress</span>
+            <span className="settlement-pct font-mono">{summary.totalHkd ? Math.round((summary.paidHkd / summary.totalHkd) * 100) : 0}% paid</span>
+          </div>
+          <div className="settlement-bar"><i style={{ width: summary.totalHkd ? `${Math.min(100, (summary.paidHkd / summary.totalHkd) * 100)}%` : '0%' }} /></div>
+          <div className="settlement-legend">
+            <span>Paid <b className="font-mono">{formatMoney(summary.paidHkd)}</b></span>
+            <span>Total <b className="font-mono">{formatMoney(summary.totalHkd)}</b></span>
+            <span>Pending <b className="font-mono">{formatMoney(summary.pendingHkd)}</b></span>
+          </div>
+        </div>
+      </section>
+
+      <section className="panel">
         <div className="section-heading">
           <div><span className="eyebrow">Commercial / live</span><h2>Purchase orders & milestones</h2></div>
           <span className="muted-label">3:4:3 milestone breakdown</span>

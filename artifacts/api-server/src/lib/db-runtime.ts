@@ -997,3 +997,297 @@ export async function getThreeWayMatch(
     return null;
   }
 }
+
+// ---------------------------------------------------------------------
+// Treasury analytics (real queries over live payment/fx/allocation data)
+// ---------------------------------------------------------------------
+export type RuntimeTreasuryMonthlyPayment = {
+  month: string;
+  paid: number;
+  committed: number;
+};
+
+export type RuntimeTreasuryBusinessUnit = {
+  name: string;
+  value: number;
+  color: string;
+};
+
+export type RuntimeTreasuryFxRate = {
+  currency: string;
+  rate: number;
+  delta: number;
+};
+
+export type RuntimeTreasuryAnalytics = {
+  monthlyPayments: RuntimeTreasuryMonthlyPayment[];
+  businessUnits: RuntimeTreasuryBusinessUnit[];
+  fxRates: RuntimeTreasuryFxRate[];
+  totalYtd: number;
+  varianceRate: number;
+};
+
+const UNIT_COLORS = [
+  "#0f766e", "#2563eb", "#84cc16", "#f59e0b", "#8b5cf6",
+  "#06b6d4", "#f97316", "#ec4899",
+];
+
+function colorFor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
+  return UNIT_COLORS[Math.abs(hash) % UNIT_COLORS.length];
+}
+
+export type RuntimeTreasuryLedgerRow = {
+  id: string;
+  prNumber: string;
+  vendor: string;
+  projectCode: string;
+  dueDate: string;
+  amount: number;
+  paidAmount: number;
+  varianceDetected: boolean;
+  status: string;
+};
+
+export async function loadTreasuryAnalytics(): Promise<RuntimeTreasuryAnalytics | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const monthly = await pool.query(
+      `SELECT to_char(due_date, 'Mon YY')                        AS month,
+              SUM(amount)::float8                                AS committed,
+              SUM(COALESCE(paid_amount,0))::float8               AS paid
+         FROM payment_schedules
+        GROUP BY to_char(due_date, 'Mon YY'), to_char(due_date, 'YYYY-MM')
+        ORDER BY MIN(due_date)`,
+    );
+    const units = await pool.query(
+      `SELECT ca.business_unit                                    AS name,
+              SUM(ps.amount * ca.percentage_share / 100.0)::float8 AS value
+         FROM cost_allocations ca
+         JOIN payment_schedules ps ON ps.procurement_id = ca.procurement_id
+        GROUP BY ca.business_unit
+        ORDER BY value DESC`,
+    );
+    const fx = await pool.query(
+      `SELECT base_currency, quote_currency, rate::float8 AS rate, effective_at
+         FROM fx_rates
+        ORDER BY quote_currency, effective_at DESC`,
+    );
+    const totals = await pool.query(
+      `SELECT SUM(COALESCE(paid_amount,0))::float8 AS paid FROM payment_schedules`,
+    );
+    const variance = await pool.query(
+      `SELECT (SUM(CASE WHEN is_variance_detected THEN amount ELSE 0 END)
+               / NULLIF(SUM(amount),0))::float8 * 100 AS rate FROM payment_schedules`,
+    );
+
+    const fxByPair: Record<string, { rate: number; prev: number | null }> = {};
+    for (const r of fx.rows) {
+      const key = str(r.quote_currency);
+      const rate = num(r.rate);
+      if (!fxByPair[key]) fxByPair[key] = { rate, prev: null };
+      else if (fxByPair[key].prev == null) fxByPair[key].prev = rate;
+    }
+    const fxRates: RuntimeTreasuryFxRate[] = Object.entries(fxByPair).map(([quote, v]) => ({
+      currency: `${quote}/HKD`,
+      rate: v.rate,
+      delta: v.prev == null || v.prev === 0 ? 0 : ((v.rate - v.prev) / v.prev) * 100,
+    })).sort((a, b) => a.currency.localeCompare(b.currency));
+
+    return {
+      monthlyPayments: monthly.rows.map((r) => ({
+        month: str(r.month),
+        paid: num(r.paid),
+        committed: num(r.committed),
+      })),
+      businessUnits: units.rows.map((r) => ({
+        name: str(r.name),
+        value: num(r.value),
+        color: colorFor(str(r.name)),
+      })),
+      fxRates,
+      totalYtd: num(totals.rows[0]?.paid),
+      varianceRate: Math.round((num(variance.rows[0]?.rate) + Number.EPSILON) * 10) / 10,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadTreasuryLedger(): Promise<RuntimeTreasuryLedgerRow[] | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT ps.id::text AS id,
+              COALESCE(pr.pr_number,'') AS pr_number,
+              COALESCE(v.vendor_name,'') AS vendor,
+              COALESCE(pr.project_code,'') AS project_code,
+              to_char(ps.due_date, 'DD Mon YYYY') AS due_date,
+              ps.amount::float8 AS amount,
+              COALESCE(ps.paid_amount,0)::float8 AS paid_amount,
+              COALESCE(ps.is_variance_detected,false) AS is_variance_detected,
+              CASE WHEN ps.paid_at IS NOT NULL THEN 'Paid'
+                   WHEN COALESCE(ps.is_variance_detected,false) THEN 'Variance'
+                   ELSE 'Pending' END AS status
+         FROM payment_schedules ps
+         LEFT JOIN procurement_records pr ON pr.id = ps.procurement_id
+         LEFT JOIN vendors v ON v.id = pr.vendor_id
+        ORDER BY ps.due_date`,
+    );
+    return rows.map((row) => ({
+      id: str(row.id),
+      prNumber: str(row.pr_number),
+      vendor: str(row.vendor),
+      projectCode: str(row.project_code),
+      dueDate: str(row.due_date),
+      amount: num(row.amount),
+      paidAmount: num(row.paid_amount),
+      varianceDetected: Boolean(row.is_variance_detected),
+      status: str(row.status),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------
+// Audit log (live read from audit_logs joined to profiles)
+// ---------------------------------------------------------------------
+export type RuntimeAuditLog = {
+  id: string;
+  actor: string;
+  action: string;
+  target: string;
+  timestamp: string;
+  region: string;
+  deputy: boolean;
+};
+
+export async function listAuditLogs(): Promise<RuntimeAuditLog[] | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT a.id::text AS id,
+              COALESCE(p.full_name, a.actor_id::text, 'System') AS actor,
+              a.action_type AS action,
+              a.target_resource AS target,
+              to_char(a.created_at, 'DD Mon YYYY, HH24:MI:SS') AS timestamp,
+              COALESCE(p.region, 'HK') AS region,
+              COALESCE(a.acted_as_deputy, false) AS deputy
+         FROM audit_logs a
+         LEFT JOIN profiles p ON p.id = a.actor_id
+        ORDER BY a.created_at DESC, a.id`,
+    );
+    return rows.map((row) => ({
+      id: str(row.id),
+      actor: str(row.actor),
+      action: str(row.action),
+      target: str(row.target),
+      timestamp: str(row.timestamp),
+      region: str(row.region),
+      deputy: Boolean(row.deputy),
+    }));
+  } catch {
+    return null;
+  }
+}
+
+
+// ---------------------------------------------------------------------
+// Deputy delegation (date-windowed, reconciled by pg_cron)
+// ---------------------------------------------------------------------
+export type RuntimeDeputyDelegation = {
+  principal: {
+    id: string;
+    fullName: string;
+    role: string;
+    onLeave: boolean;
+  } | null;
+  deputy: {
+    id: string;
+    fullName: string;
+    role: string;
+    baseRole: string | null;
+  } | null;
+  leaveStart: string | null;
+  leaveEnd: string | null;
+  active: boolean;
+  acting: boolean;
+};
+
+export async function getDeputyDelegation(): Promise<RuntimeDeputyDelegation | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id::text AS principal_id,
+              p.full_name AS principal_name,
+              p.role AS principal_role,
+              d.id::text AS deputy_id,
+              d.full_name AS deputy_name,
+              d.role AS deputy_role,
+              d.base_role AS base_role,
+              to_char(p.leave_start_date, 'YYYY-MM-DD') AS leave_start,
+              to_char(p.leave_end_date, 'YYYY-MM-DD') AS leave_end,
+              (p.leave_start_date IS NOT NULL
+                 AND CURRENT_DATE >= p.leave_start_date
+                 AND CURRENT_DATE <= COALESCE(p.leave_end_date, p.leave_start_date)) AS active,
+              (d.role = 'DEPUTY_HEAD_OF_IT' AND d.base_role IS NOT NULL) AS delegated
+         FROM profiles p
+         LEFT JOIN profiles d ON d.deputy_for_user_id = p.id
+        WHERE p.deputy_for_user_id IS NULL
+        ORDER BY d.id
+        LIMIT 1`,
+    );
+    if (!rows.length) return null;
+    const row = rows[0];
+    return {
+      principal: {
+        id: str(row.principal_id),
+        fullName: str(row.principal_name),
+        role: str(row.principal_role),
+        onLeave: Boolean(row.active),
+      },
+      deputy: row.deputy_id
+        ? {
+            id: str(row.deputy_id),
+            fullName: str(row.deputy_name),
+            role: str(row.deputy_role),
+            baseRole: row.base_role == null ? null : str(row.base_role),
+          }
+        : null,
+      leaveStart: row.leave_start == null ? null : str(row.leave_start),
+      leaveEnd: row.leave_end == null ? null : str(row.leave_end),
+      active: Boolean(row.active),
+      acting: Boolean(row.delegated),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function setDeputyLeaveWindow(
+  principalId: string,
+  leaveStart: string | null,
+  leaveEnd: string | null,
+): Promise<RuntimeDeputyDelegation | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    await pool.query(
+      `UPDATE profiles
+          SET leave_start_date = $2::date,
+              leave_end_date   = $3::date
+        WHERE id = $1::uuid`,
+      [principalId, leaveStart, leaveEnd],
+    );
+    await pool.query("SELECT reconcile_deputy_delegation()");
+    return getDeputyDelegation();
+  } catch {
+    return null;
+  }
+}
