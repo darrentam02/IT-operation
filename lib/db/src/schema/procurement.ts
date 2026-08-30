@@ -56,7 +56,7 @@ export const procurementRecords = pgTable(
     fxRate: numeric("fx_rate", { precision: 18, scale: 6 }).notNull(),
     paymentTerms: text("payment_terms"),
     expectedSettlementAmount: numeric("expected_settlement_amount", { precision: 15, scale: 2 }),
-    expectedSettlementMonth: date("expected_settlement_month"),
+    expectedSettlementMonth: text("expected_settlement_month"),
     terms: text("terms"),
     deliveryAddress: text("delivery_address"),
     taxId: text("tax_id"),

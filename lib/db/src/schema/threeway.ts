@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, timestamp, text, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, numeric, timestamp, text, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { threeWayMatchStatus } from "./enums";
 import { procurementRecords } from "./procurement";
@@ -27,7 +27,13 @@ export const threeWayMatches = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).default(sql`NOW()`),
     updatedAt: timestamp("updated_at", { withTimezone: true }).default(sql`NOW()`),
   },
-  (table) => [index("three_way_matches_procurement_idx").on(table.procurementId)],
+  (table) => [
+    index("three_way_matches_procurement_idx").on(table.procurementId),
+    uniqueIndex("three_way_matches_proc_pay_key").on(
+      table.procurementId,
+      table.paymentScheduleId,
+    ),
+  ],
 );
 
 export type ThreeWayMatch = typeof threeWayMatches.$inferSelect;

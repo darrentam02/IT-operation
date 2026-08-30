@@ -131,6 +131,46 @@ export const ListProcurementRecordsResponse = zod.array(ListProcurementRecordsRe
 
 
 /**
+ * Validates budget availability and auto-sets legal/security review flags (HKD > 100,000).
+ * @summary Create a purchase requisition (PR)
+ */
+export const CreateProcurementRecordBody = zod.object({
+  "vendorId": zod.string(),
+  "budgetLineId": zod.string(),
+  "region": zod.enum(['HK', 'CN', 'MY', 'ID']),
+  "localCurrency": zod.string(),
+  "localAmount": zod.number(),
+  "hkdAmount": zod.number(),
+  "fxRate": zod.number(),
+  "projectCode": zod.string(),
+  "paymentTerms": zod.string().optional(),
+  "expectedSettlementAmount": zod.number().optional(),
+  "expectedSettlementMonth": zod.string().optional(),
+  "terms": zod.string().optional(),
+  "deliveryAddress": zod.string().optional(),
+  "taxId": zod.string().optional(),
+  "createdBy": zod.string().optional(),
+  "level1Approver": zod.string().optional(),
+  "level2Approver": zod.string().optional(),
+  "level3Approver": zod.string().optional()
+})
+
+export const CreateProcurementRecordResponse = zod.object({
+  "id": zod.string(),
+  "prNumber": zod.string(),
+  "poNumber": zod.string(),
+  "vendor": zod.string(),
+  "region": zod.string(),
+  "amount": zod.number(),
+  "currency": zod.string(),
+  "hkdAmount": zod.number(),
+  "status": zod.string(),
+  "match": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+/**
  * @summary Approve a procurement record
  */
 export const ApproveProcurementParams = zod.object({
@@ -149,6 +189,369 @@ export const ApproveProcurementResponse = zod.object({
   "status": zod.string(),
   "match": zod.string(),
   "createdAt": zod.string()
+})
+
+
+/**
+ * Enforces tiered approval matrix (L1/L2/L3), legal/security review gating, and dual-control.
+ * @summary Advance PR/PO through tiered status transitions
+ */
+export const AdvanceProcurementStatusParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const AdvanceProcurementStatusBody = zod.object({
+  "toStatus": zod.enum(['PR_APPROVED', 'PO_ISSUED', 'MILESTONE_RECEIVED', 'INVOICE_PENDING', 'PAYMENT_APPROVED', 'PAID']),
+  "actorId": zod.string(),
+  "note": zod.string().optional()
+})
+
+export const AdvanceProcurementStatusResponse = zod.object({
+  "id": zod.string(),
+  "prNumber": zod.string(),
+  "poNumber": zod.string(),
+  "vendor": zod.string(),
+  "region": zod.string(),
+  "amount": zod.number(),
+  "currency": zod.string(),
+  "hkdAmount": zod.number(),
+  "status": zod.string(),
+  "match": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary Submit legal or security review decision
+ */
+export const SubmitProcurementReviewParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SubmitProcurementReviewBody = zod.object({
+  "reviewType": zod.enum(['legal', 'security']),
+  "decision": zod.enum(['APPROVED', 'REJECTED']),
+  "reviewerId": zod.string()
+})
+
+export const SubmitProcurementReviewResponse = zod.object({
+  "id": zod.string(),
+  "prNumber": zod.string(),
+  "poNumber": zod.string(),
+  "vendor": zod.string(),
+  "region": zod.string(),
+  "amount": zod.number(),
+  "currency": zod.string(),
+  "hkdAmount": zod.number(),
+  "status": zod.string(),
+  "match": zod.string(),
+  "createdAt": zod.string()
+})
+
+
+/**
+ * @summary List payment schedules for a procurement record
+ */
+export const ListPaymentSchedulesParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListPaymentSchedulesResponseItem = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "isVarianceDetected": zod.boolean(),
+  "varianceType": zod.string().optional(),
+  "varianceAmount": zod.number().optional(),
+  "varianceResolutionNotes": zod.string().optional(),
+  "dualSignoffAt": zod.string().optional(),
+  "paidAt": zod.string().optional(),
+  "paidAmount": zod.number().optional(),
+  "paymentReference": zod.string().optional(),
+  "threeWayMatch": zod.string().optional()
+})
+export const ListPaymentSchedulesResponse = zod.array(ListPaymentSchedulesResponseItem)
+
+
+/**
+ * Standard 3:4:3 milestone structure; auto-triggers three-way match on invoice upload.
+ * @summary Create a milestone / payment schedule entry
+ */
+export const CreatePaymentScheduleParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CreatePaymentScheduleBody = zod.object({
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional()
+})
+
+export const CreatePaymentScheduleResponse = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "isVarianceDetected": zod.boolean(),
+  "varianceType": zod.string().optional(),
+  "varianceAmount": zod.number().optional(),
+  "varianceResolutionNotes": zod.string().optional(),
+  "dualSignoffAt": zod.string().optional(),
+  "paidAt": zod.string().optional(),
+  "paidAmount": zod.number().optional(),
+  "paymentReference": zod.string().optional(),
+  "threeWayMatch": zod.string().optional()
+})
+
+
+/**
+ * @summary Submit vendor invoice or OCR data, triggering three-way match
+ */
+export const SubmitInvoiceParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const SubmitInvoiceBody = zod.object({
+  "invoiceAmount": zod.number(),
+  "invoiceDate": zod.string().optional(),
+  "invoiceNumber": zod.string(),
+  "ocrInvoiceData": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const SubmitInvoiceResponse = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "isVarianceDetected": zod.boolean(),
+  "varianceType": zod.string().optional(),
+  "varianceAmount": zod.number().optional(),
+  "varianceResolutionNotes": zod.string().optional(),
+  "dualSignoffAt": zod.string().optional(),
+  "paidAt": zod.string().optional(),
+  "paidAmount": zod.number().optional(),
+  "paymentReference": zod.string().optional(),
+  "threeWayMatch": zod.string().optional()
+})
+
+
+/**
+ * @summary Get the three-way match result for a payment schedule
+ */
+export const GetThreeWayMatchParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GetThreeWayMatchResponse = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "paymentScheduleId": zod.string().optional(),
+  "poAmount": zod.number().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "milestoneAmount": zod.number().optional(),
+  "priceVariance": zod.number().optional(),
+  "shippingTaxVariance": zod.number().optional(),
+  "status": zod.enum(['PENDING', 'MATCHED', 'PRICE_VARIANCE', 'SHIPPING_TAX_VARIANCE', 'BLOCKED']),
+  "matchedAt": zod.string().optional(),
+  "notes": zod.string().optional()
+})
+
+
+/**
+ * @summary Resolve a blocked payment variance (finance + legal consultation)
+ */
+export const ResolveVarianceParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ResolveVarianceBody = zod.object({
+  "resolvedBy": zod.string(),
+  "resolutionNotes": zod.string(),
+  "requireLegalConsultation": zod.boolean().optional()
+})
+
+export const ResolveVarianceResponse = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "isVarianceDetected": zod.boolean(),
+  "varianceType": zod.string().optional(),
+  "varianceAmount": zod.number().optional(),
+  "varianceResolutionNotes": zod.string().optional(),
+  "dualSignoffAt": zod.string().optional(),
+  "paidAt": zod.string().optional(),
+  "paidAmount": zod.number().optional(),
+  "paymentReference": zod.string().optional(),
+  "threeWayMatch": zod.string().optional()
+})
+
+
+/**
+ * @summary Apply dual sign-off (Head of IT + Finance Auditor) for payments > 250k
+ */
+export const DualSignoffParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DualSignoffBody = zod.object({
+  "headId": zod.string(),
+  "financeId": zod.string()
+})
+
+export const DualSignoffResponse = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "isVarianceDetected": zod.boolean(),
+  "varianceType": zod.string().optional(),
+  "varianceAmount": zod.number().optional(),
+  "varianceResolutionNotes": zod.string().optional(),
+  "dualSignoffAt": zod.string().optional(),
+  "paidAt": zod.string().optional(),
+  "paidAmount": zod.number().optional(),
+  "paymentReference": zod.string().optional(),
+  "threeWayMatch": zod.string().optional()
+})
+
+
+/**
+ * @summary Mark a payment schedule as paid
+ */
+export const MarkPaidParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const MarkPaidBody = zod.object({
+  "paidAmount": zod.number(),
+  "paymentReference": zod.string(),
+  "paidBy": zod.string()
+})
+
+export const MarkPaidResponse = zod.object({
+  "id": zod.string(),
+  "procurementId": zod.string(),
+  "dueDate": zod.string(),
+  "amount": zod.number(),
+  "isMilestonePayment": zod.boolean(),
+  "milestoneNumber": zod.number().optional(),
+  "milestoneDescription": zod.string().optional(),
+  "invoiceAmount": zod.number().optional(),
+  "invoiceNumber": zod.string().optional(),
+  "isVarianceDetected": zod.boolean(),
+  "varianceType": zod.string().optional(),
+  "varianceAmount": zod.number().optional(),
+  "varianceResolutionNotes": zod.string().optional(),
+  "dualSignoffAt": zod.string().optional(),
+  "paidAt": zod.string().optional(),
+  "paidAmount": zod.number().optional(),
+  "paymentReference": zod.string().optional(),
+  "threeWayMatch": zod.string().optional()
+})
+
+
+/**
+ * @summary Get budget rollup for a fiscal year
+ */
+export const GetBudgetSummaryQueryParams = zod.object({
+  "year": zod.coerce.number().optional()
+})
+
+export const GetBudgetSummaryResponseItem = zod.object({
+  "fiscalYear": zod.number(),
+  "category": zod.string(),
+  "allocated": zod.number(),
+  "incurred": zod.number(),
+  "paid": zod.number(),
+  "remaining": zod.number()
+})
+export const GetBudgetSummaryResponse = zod.array(GetBudgetSummaryResponseItem)
+
+
+/**
+ * @summary List dead letter queue entries
+ */
+export const ListDlqEntriesQueryParams = zod.object({
+  "status": zod.coerce.string().optional()
+})
+
+export const ListDlqEntriesResponseItem = zod.object({
+  "id": zod.string(),
+  "status": zod.string(),
+  "errorCode": zod.string().optional(),
+  "errorMessage": zod.string().optional(),
+  "retryCount": zod.number(),
+  "maxRetries": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+export const ListDlqEntriesResponse = zod.array(ListDlqEntriesResponseItem)
+
+
+/**
+ * @summary Re-enqueue a DLQ entry for reprocessing
+ */
+export const ReprocessDlqEntryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ReprocessDlqEntryResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.string(),
+  "errorCode": zod.string().optional(),
+  "errorMessage": zod.string().optional(),
+  "retryCount": zod.number(),
+  "maxRetries": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
+})
+
+
+/**
+ * @summary Discard a DLQ entry (irrecoverable)
+ */
+export const DiscardDlqEntryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DiscardDlqEntryResponse = zod.object({
+  "id": zod.string(),
+  "status": zod.string(),
+  "errorCode": zod.string().optional(),
+  "errorMessage": zod.string().optional(),
+  "retryCount": zod.number(),
+  "maxRetries": zod.number(),
+  "createdAt": zod.string().optional(),
+  "updatedAt": zod.string().optional()
 })
 
 

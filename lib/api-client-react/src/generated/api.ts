@@ -20,16 +20,31 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AdvanceProcurementInput,
   AuditLog,
+  BudgetSummaryRow,
   ComplianceAnswer,
   ComplianceSearchInput,
+  CreatePaymentInput,
+  CreateProcurementInput,
   DashboardSummary,
+  DlqEntry,
+  ErrorResponse,
+  GetBudgetSummaryParams,
   HealthStatus,
+  InvoiceInput,
+  ListDlqEntriesParams,
+  PaidInput,
+  PaymentSchedule,
   ProcurementRecord,
   ReleaseGate,
+  ReviewDecisionInput,
+  SignoffInput,
   StaffMember,
   StaffStatusUpdate,
-  TreasuryAnalytics
+  ThreeWayMatch,
+  TreasuryAnalytics,
+  VarianceResolutionInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -588,6 +603,78 @@ export function useListProcurementRecords<TData = Awaited<ReturnType<typeof list
 
 
 
+export const getCreateProcurementRecordUrl = () => {
+
+
+
+
+  return `/api/procurement`
+}
+
+/**
+ * Validates budget availability and auto-sets legal/security review flags (HKD > 100,000).
+ * @summary Create a purchase requisition (PR)
+ */
+export const createProcurementRecord = async (createProcurementInput: CreateProcurementInput, options?: Parameters<typeof customFetch>[1]): Promise<ProcurementRecord> => {
+
+  return customFetch<ProcurementRecord>(getCreateProcurementRecordUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createProcurementInput)
+  }
+);}
+
+
+
+
+
+export const getCreateProcurementRecordMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProcurementRecord>>, TError,{data: BodyType<CreateProcurementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createProcurementRecord>>, TError,{data: BodyType<CreateProcurementInput>}, TContext> => {
+
+const mutationKey = ['createProcurementRecord'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createProcurementRecord>>, {data: BodyType<CreateProcurementInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createProcurementRecord(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateProcurementRecordMutationResult = NonNullable<Awaited<ReturnType<typeof createProcurementRecord>>>
+    export type CreateProcurementRecordMutationBody = BodyType<CreateProcurementInput>
+    export type CreateProcurementRecordMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a purchase requisition (PR)
+ */
+export const useCreateProcurementRecord = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createProcurementRecord>>, TError,{data: BodyType<CreateProcurementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createProcurementRecord>>,
+        TError,
+        {data: BodyType<CreateProcurementInput>},
+        TContext
+      > => {
+      return useMutation(getCreateProcurementRecordMutationOptions(options));
+    }
+
 export const getApproveProcurementUrl = (id: string,) => {
 
 
@@ -657,6 +744,976 @@ export const useApproveProcurement = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getApproveProcurementMutationOptions(options));
+    }
+
+export const getAdvanceProcurementStatusUrl = (id: string,) => {
+
+
+
+
+  return `/api/procurement/${id}/status`
+}
+
+/**
+ * Enforces tiered approval matrix (L1/L2/L3), legal/security review gating, and dual-control.
+ * @summary Advance PR/PO through tiered status transitions
+ */
+export const advanceProcurementStatus = async (id: string,
+    advanceProcurementInput: AdvanceProcurementInput, options?: Parameters<typeof customFetch>[1]): Promise<ProcurementRecord> => {
+
+  return customFetch<ProcurementRecord>(getAdvanceProcurementStatusUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(advanceProcurementInput)
+  }
+);}
+
+
+
+
+
+export const getAdvanceProcurementStatusMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof advanceProcurementStatus>>, TError,{id: string;data: BodyType<AdvanceProcurementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof advanceProcurementStatus>>, TError,{id: string;data: BodyType<AdvanceProcurementInput>}, TContext> => {
+
+const mutationKey = ['advanceProcurementStatus'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof advanceProcurementStatus>>, {id: string;data: BodyType<AdvanceProcurementInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  advanceProcurementStatus(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdvanceProcurementStatusMutationResult = NonNullable<Awaited<ReturnType<typeof advanceProcurementStatus>>>
+    export type AdvanceProcurementStatusMutationBody = BodyType<AdvanceProcurementInput>
+    export type AdvanceProcurementStatusMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Advance PR/PO through tiered status transitions
+ */
+export const useAdvanceProcurementStatus = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof advanceProcurementStatus>>, TError,{id: string;data: BodyType<AdvanceProcurementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof advanceProcurementStatus>>,
+        TError,
+        {id: string;data: BodyType<AdvanceProcurementInput>},
+        TContext
+      > => {
+      return useMutation(getAdvanceProcurementStatusMutationOptions(options));
+    }
+
+export const getSubmitProcurementReviewUrl = (id: string,) => {
+
+
+
+
+  return `/api/procurement/${id}/review`
+}
+
+/**
+ * @summary Submit legal or security review decision
+ */
+export const submitProcurementReview = async (id: string,
+    reviewDecisionInput: ReviewDecisionInput, options?: Parameters<typeof customFetch>[1]): Promise<ProcurementRecord> => {
+
+  return customFetch<ProcurementRecord>(getSubmitProcurementReviewUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(reviewDecisionInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitProcurementReviewMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitProcurementReview>>, TError,{id: string;data: BodyType<ReviewDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitProcurementReview>>, TError,{id: string;data: BodyType<ReviewDecisionInput>}, TContext> => {
+
+const mutationKey = ['submitProcurementReview'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitProcurementReview>>, {id: string;data: BodyType<ReviewDecisionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  submitProcurementReview(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitProcurementReviewMutationResult = NonNullable<Awaited<ReturnType<typeof submitProcurementReview>>>
+    export type SubmitProcurementReviewMutationBody = BodyType<ReviewDecisionInput>
+    export type SubmitProcurementReviewMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Submit legal or security review decision
+ */
+export const useSubmitProcurementReview = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitProcurementReview>>, TError,{id: string;data: BodyType<ReviewDecisionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitProcurementReview>>,
+        TError,
+        {id: string;data: BodyType<ReviewDecisionInput>},
+        TContext
+      > => {
+      return useMutation(getSubmitProcurementReviewMutationOptions(options));
+    }
+
+export const getListPaymentSchedulesUrl = (id: string,) => {
+
+
+
+
+  return `/api/procurement/${id}/payments`
+}
+
+/**
+ * @summary List payment schedules for a procurement record
+ */
+export const listPaymentSchedules = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule[]> => {
+
+  return customFetch<PaymentSchedule[]>(getListPaymentSchedulesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPaymentSchedulesQueryKey = (id: string,) => {
+    return [
+    `/api/procurement/${id}/payments`
+    ] as const;
+    }
+
+
+export const getListPaymentSchedulesQueryOptions = <TData = Awaited<ReturnType<typeof listPaymentSchedules>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPaymentSchedules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPaymentSchedulesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPaymentSchedules>>> = ({ signal }) => listPaymentSchedules(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPaymentSchedules>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPaymentSchedulesQueryResult = NonNullable<Awaited<ReturnType<typeof listPaymentSchedules>>>
+export type ListPaymentSchedulesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List payment schedules for a procurement record
+ */
+
+export function useListPaymentSchedules<TData = Awaited<ReturnType<typeof listPaymentSchedules>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPaymentSchedules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPaymentSchedulesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreatePaymentScheduleUrl = (id: string,) => {
+
+
+
+
+  return `/api/procurement/${id}/payments`
+}
+
+/**
+ * Standard 3:4:3 milestone structure; auto-triggers three-way match on invoice upload.
+ * @summary Create a milestone / payment schedule entry
+ */
+export const createPaymentSchedule = async (id: string,
+    createPaymentInput: CreatePaymentInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getCreatePaymentScheduleUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createPaymentInput)
+  }
+);}
+
+
+
+
+
+export const getCreatePaymentScheduleMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPaymentSchedule>>, TError,{id: string;data: BodyType<CreatePaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPaymentSchedule>>, TError,{id: string;data: BodyType<CreatePaymentInput>}, TContext> => {
+
+const mutationKey = ['createPaymentSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPaymentSchedule>>, {id: string;data: BodyType<CreatePaymentInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createPaymentSchedule(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePaymentScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof createPaymentSchedule>>>
+    export type CreatePaymentScheduleMutationBody = BodyType<CreatePaymentInput>
+    export type CreatePaymentScheduleMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a milestone / payment schedule entry
+ */
+export const useCreatePaymentSchedule = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPaymentSchedule>>, TError,{id: string;data: BodyType<CreatePaymentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPaymentSchedule>>,
+        TError,
+        {id: string;data: BodyType<CreatePaymentInput>},
+        TContext
+      > => {
+      return useMutation(getCreatePaymentScheduleMutationOptions(options));
+    }
+
+export const getSubmitInvoiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/payments/${id}/invoice`
+}
+
+/**
+ * @summary Submit vendor invoice or OCR data, triggering three-way match
+ */
+export const submitInvoice = async (id: string,
+    invoiceInput: InvoiceInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getSubmitInvoiceUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(invoiceInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitInvoiceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitInvoice>>, TError,{id: string;data: BodyType<InvoiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitInvoice>>, TError,{id: string;data: BodyType<InvoiceInput>}, TContext> => {
+
+const mutationKey = ['submitInvoice'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitInvoice>>, {id: string;data: BodyType<InvoiceInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  submitInvoice(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitInvoiceMutationResult = NonNullable<Awaited<ReturnType<typeof submitInvoice>>>
+    export type SubmitInvoiceMutationBody = BodyType<InvoiceInput>
+    export type SubmitInvoiceMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Submit vendor invoice or OCR data, triggering three-way match
+ */
+export const useSubmitInvoice = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitInvoice>>, TError,{id: string;data: BodyType<InvoiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitInvoice>>,
+        TError,
+        {id: string;data: BodyType<InvoiceInput>},
+        TContext
+      > => {
+      return useMutation(getSubmitInvoiceMutationOptions(options));
+    }
+
+export const getGetThreeWayMatchUrl = (id: string,) => {
+
+
+
+
+  return `/api/payments/${id}/three-way`
+}
+
+/**
+ * @summary Get the three-way match result for a payment schedule
+ */
+export const getThreeWayMatch = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ThreeWayMatch> => {
+
+  return customFetch<ThreeWayMatch>(getGetThreeWayMatchUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetThreeWayMatchQueryKey = (id: string,) => {
+    return [
+    `/api/payments/${id}/three-way`
+    ] as const;
+    }
+
+
+export const getGetThreeWayMatchQueryOptions = <TData = Awaited<ReturnType<typeof getThreeWayMatch>>, TError = ErrorType<ErrorResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getThreeWayMatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetThreeWayMatchQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getThreeWayMatch>>> = ({ signal }) => getThreeWayMatch(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getThreeWayMatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetThreeWayMatchQueryResult = NonNullable<Awaited<ReturnType<typeof getThreeWayMatch>>>
+export type GetThreeWayMatchQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the three-way match result for a payment schedule
+ */
+
+export function useGetThreeWayMatch<TData = Awaited<ReturnType<typeof getThreeWayMatch>>, TError = ErrorType<ErrorResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getThreeWayMatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetThreeWayMatchQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getResolveVarianceUrl = (id: string,) => {
+
+
+
+
+  return `/api/payments/${id}/variance`
+}
+
+/**
+ * @summary Resolve a blocked payment variance (finance + legal consultation)
+ */
+export const resolveVariance = async (id: string,
+    varianceResolutionInput: VarianceResolutionInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getResolveVarianceUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(varianceResolutionInput)
+  }
+);}
+
+
+
+
+
+export const getResolveVarianceMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveVariance>>, TError,{id: string;data: BodyType<VarianceResolutionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveVariance>>, TError,{id: string;data: BodyType<VarianceResolutionInput>}, TContext> => {
+
+const mutationKey = ['resolveVariance'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveVariance>>, {id: string;data: BodyType<VarianceResolutionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resolveVariance(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveVarianceMutationResult = NonNullable<Awaited<ReturnType<typeof resolveVariance>>>
+    export type ResolveVarianceMutationBody = BodyType<VarianceResolutionInput>
+    export type ResolveVarianceMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Resolve a blocked payment variance (finance + legal consultation)
+ */
+export const useResolveVariance = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveVariance>>, TError,{id: string;data: BodyType<VarianceResolutionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveVariance>>,
+        TError,
+        {id: string;data: BodyType<VarianceResolutionInput>},
+        TContext
+      > => {
+      return useMutation(getResolveVarianceMutationOptions(options));
+    }
+
+export const getDualSignoffUrl = (id: string,) => {
+
+
+
+
+  return `/api/payments/${id}/signoff`
+}
+
+/**
+ * @summary Apply dual sign-off (Head of IT + Finance Auditor) for payments > 250k
+ */
+export const dualSignoff = async (id: string,
+    signoffInput: SignoffInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getDualSignoffUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(signoffInput)
+  }
+);}
+
+
+
+
+
+export const getDualSignoffMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dualSignoff>>, TError,{id: string;data: BodyType<SignoffInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dualSignoff>>, TError,{id: string;data: BodyType<SignoffInput>}, TContext> => {
+
+const mutationKey = ['dualSignoff'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dualSignoff>>, {id: string;data: BodyType<SignoffInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  dualSignoff(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DualSignoffMutationResult = NonNullable<Awaited<ReturnType<typeof dualSignoff>>>
+    export type DualSignoffMutationBody = BodyType<SignoffInput>
+    export type DualSignoffMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Apply dual sign-off (Head of IT + Finance Auditor) for payments > 250k
+ */
+export const useDualSignoff = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dualSignoff>>, TError,{id: string;data: BodyType<SignoffInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dualSignoff>>,
+        TError,
+        {id: string;data: BodyType<SignoffInput>},
+        TContext
+      > => {
+      return useMutation(getDualSignoffMutationOptions(options));
+    }
+
+export const getMarkPaidUrl = (id: string,) => {
+
+
+
+
+  return `/api/payments/${id}/pay`
+}
+
+/**
+ * @summary Mark a payment schedule as paid
+ */
+export const markPaid = async (id: string,
+    paidInput: PaidInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getMarkPaidUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(paidInput)
+  }
+);}
+
+
+
+
+
+export const getMarkPaidMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markPaid>>, TError,{id: string;data: BodyType<PaidInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markPaid>>, TError,{id: string;data: BodyType<PaidInput>}, TContext> => {
+
+const mutationKey = ['markPaid'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markPaid>>, {id: string;data: BodyType<PaidInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  markPaid(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkPaidMutationResult = NonNullable<Awaited<ReturnType<typeof markPaid>>>
+    export type MarkPaidMutationBody = BodyType<PaidInput>
+    export type MarkPaidMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Mark a payment schedule as paid
+ */
+export const useMarkPaid = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markPaid>>, TError,{id: string;data: BodyType<PaidInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markPaid>>,
+        TError,
+        {id: string;data: BodyType<PaidInput>},
+        TContext
+      > => {
+      return useMutation(getMarkPaidMutationOptions(options));
+    }
+
+export const getGetBudgetSummaryUrl = (params?: GetBudgetSummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/budget/summary?${stringifiedParams}` : `/api/budget/summary`
+}
+
+/**
+ * @summary Get budget rollup for a fiscal year
+ */
+export const getBudgetSummary = async (params?: GetBudgetSummaryParams, options?: Parameters<typeof customFetch>[1]): Promise<BudgetSummaryRow[]> => {
+
+  return customFetch<BudgetSummaryRow[]>(getGetBudgetSummaryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBudgetSummaryQueryKey = (params?: GetBudgetSummaryParams,) => {
+    return [
+    `/api/budget/summary`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetBudgetSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getBudgetSummary>>, TError = ErrorType<unknown>>(params?: GetBudgetSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBudgetSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBudgetSummaryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBudgetSummary>>> = ({ signal }) => getBudgetSummary(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBudgetSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBudgetSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getBudgetSummary>>>
+export type GetBudgetSummaryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get budget rollup for a fiscal year
+ */
+
+export function useGetBudgetSummary<TData = Awaited<ReturnType<typeof getBudgetSummary>>, TError = ErrorType<unknown>>(
+ params?: GetBudgetSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBudgetSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBudgetSummaryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListDlqEntriesUrl = (params?: ListDlqEntriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dlq?${stringifiedParams}` : `/api/dlq`
+}
+
+/**
+ * @summary List dead letter queue entries
+ */
+export const listDlqEntries = async (params?: ListDlqEntriesParams, options?: Parameters<typeof customFetch>[1]): Promise<DlqEntry[]> => {
+
+  return customFetch<DlqEntry[]>(getListDlqEntriesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListDlqEntriesQueryKey = (params?: ListDlqEntriesParams,) => {
+    return [
+    `/api/dlq`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListDlqEntriesQueryOptions = <TData = Awaited<ReturnType<typeof listDlqEntries>>, TError = ErrorType<unknown>>(params?: ListDlqEntriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDlqEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListDlqEntriesQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listDlqEntries>>> = ({ signal }) => listDlqEntries(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDlqEntries>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListDlqEntriesQueryResult = NonNullable<Awaited<ReturnType<typeof listDlqEntries>>>
+export type ListDlqEntriesQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List dead letter queue entries
+ */
+
+export function useListDlqEntries<TData = Awaited<ReturnType<typeof listDlqEntries>>, TError = ErrorType<unknown>>(
+ params?: ListDlqEntriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDlqEntries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListDlqEntriesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getReprocessDlqEntryUrl = (id: string,) => {
+
+
+
+
+  return `/api/dlq/${id}/reprocess`
+}
+
+/**
+ * @summary Re-enqueue a DLQ entry for reprocessing
+ */
+export const reprocessDlqEntry = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<DlqEntry> => {
+
+  return customFetch<DlqEntry>(getReprocessDlqEntryUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getReprocessDlqEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reprocessDlqEntry>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reprocessDlqEntry>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reprocessDlqEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reprocessDlqEntry>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reprocessDlqEntry(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReprocessDlqEntryMutationResult = NonNullable<Awaited<ReturnType<typeof reprocessDlqEntry>>>
+
+    export type ReprocessDlqEntryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Re-enqueue a DLQ entry for reprocessing
+ */
+export const useReprocessDlqEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reprocessDlqEntry>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reprocessDlqEntry>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReprocessDlqEntryMutationOptions(options));
+    }
+
+export const getDiscardDlqEntryUrl = (id: string,) => {
+
+
+
+
+  return `/api/dlq/${id}/discard`
+}
+
+/**
+ * @summary Discard a DLQ entry (irrecoverable)
+ */
+export const discardDlqEntry = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<DlqEntry> => {
+
+  return customFetch<DlqEntry>(getDiscardDlqEntryUrl(id),
+  {
+    ...options,
+    method: 'PATCH'
+
+
+  }
+);}
+
+
+
+
+
+export const getDiscardDlqEntryMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discardDlqEntry>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof discardDlqEntry>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['discardDlqEntry'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof discardDlqEntry>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  discardDlqEntry(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DiscardDlqEntryMutationResult = NonNullable<Awaited<ReturnType<typeof discardDlqEntry>>>
+
+    export type DiscardDlqEntryMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Discard a DLQ entry (irrecoverable)
+ */
+export const useDiscardDlqEntry = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof discardDlqEntry>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof discardDlqEntry>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDiscardDlqEntryMutationOptions(options));
     }
 
 export const getGetTreasuryAnalyticsUrl = () => {

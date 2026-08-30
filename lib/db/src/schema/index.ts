@@ -8,3 +8,4 @@ export * from "./knowledge";
 export * from "./audit";
 export * from "./budget";
 export * from "./threeway";
+export * from "./dlq";

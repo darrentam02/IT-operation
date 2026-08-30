@@ -122,6 +122,36 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/ProcurementRecord"
+    post:
+      operationId: createProcurementRecord
+      tags: [operations]
+      summary: Create a purchase requisition (PR)
+      description: Validates budget availability and auto-sets legal/security review flags (HKD > 100,000).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProcurementInput"
+      responses:
+        "201":
+          description: Created procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+        "409":
+          description: Budget pre-check failed or duplicate PR number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /procurement/{id}/approve:
     patch:
       operationId: approveProcurement
@@ -140,6 +170,331 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ProcurementRecord"
+  /procurement/{id}/status:
+    patch:
+      operationId: advanceProcurementStatus
+      tags: [operations]
+      summary: Advance PR/PO through tiered status transitions
+      description: Enforces tiered approval matrix (L1/L2/L3), legal/security review gating, and dual-control.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdvanceProcurementInput"
+      responses:
+        "200":
+          description: Updated procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+        "409":
+          description: Transition rejected (review gating / approval tier / variance)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /procurement/{id}/review:
+    patch:
+      operationId: submitProcurementReview
+      tags: [operations]
+      summary: Submit legal or security review decision
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionInput"
+      responses:
+        "200":
+          description: Updated procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+        "409":
+          description: Review not required for this record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /procurement/{id}/payments:
+    get:
+      operationId: listPaymentSchedules
+      tags: [operations]
+      summary: List payment schedules for a procurement record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaymentSchedule"
+    post:
+      operationId: createPaymentSchedule
+      tags: [operations]
+      summary: Create a milestone / payment schedule entry
+      description: Standard 3:4:3 milestone structure; auto-triggers three-way match on invoice upload.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentInput"
+      responses:
+        "201":
+          description: Created payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: Milestones would exceed PO amount
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/invoice:
+    patch:
+      operationId: submitInvoice
+      tags: [operations]
+      summary: Submit vendor invoice or OCR data, triggering three-way match
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceInput"
+      responses:
+        "200":
+          description: Payment schedule with three-way match result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+  /payments/{id}/three-way:
+    get:
+      operationId: getThreeWayMatch
+      tags: [operations]
+      summary: Get the three-way match result for a payment schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Three-way match result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreeWayMatch"
+        "404":
+          description: No three-way match found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/variance:
+    patch:
+      operationId: resolveVariance
+      tags: [operations]
+      summary: Resolve a blocked payment variance (finance + legal consultation)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VarianceResolutionInput"
+      responses:
+        "200":
+          description: Resolved payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: No variance to resolve or not authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/signoff:
+    patch:
+      operationId: dualSignoff
+      tags: [operations]
+      summary: Apply dual sign-off (Head of IT + Finance Auditor) for payments > 250k
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignoffInput"
+      responses:
+        "200":
+          description: Signed-off payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: Dual sign-off not required or incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/pay:
+    patch:
+      operationId: markPaid
+      tags: [operations]
+      summary: Mark a payment schedule as paid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaidInput"
+      responses:
+        "200":
+          description: Paid payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: Payment not ready (needs sign-off / variance resolved)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /budget/summary:
+    get:
+      operationId: getBudgetSummary
+      tags: [operations]
+      summary: Get budget rollup for a fiscal year
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Budget summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetSummaryRow"
+  /dlq:
+    get:
+      operationId: listDlqEntries
+      tags: [operations]
+      summary: List dead letter queue entries
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DLQ entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DlqEntry"
+  /dlq/{id}/reprocess:
+    patch:
+      operationId: reprocessDlqEntry
+      tags: [operations]
+      summary: Re-enqueue a DLQ entry for reprocessing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated DLQ entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DlqEntry"
+  /dlq/{id}/discard:
+    patch:
+      operationId: discardDlqEntry
+      tags: [operations]
+      summary: Discard a DLQ entry (irrecoverable)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated DLQ entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DlqEntry"
   /treasury:
     get:
       operationId: getTreasuryAnalytics
@@ -324,4 +679,162 @@ components:
         timestamp: { type: string }
         region: { type: string }
         deputy: { type: boolean }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code: { type: string }
+    CreateProcurementInput:
+      type: object
+      required:
+        - vendorId
+        - budgetLineId
+        - region
+        - localCurrency
+        - localAmount
+        - hkdAmount
+        - fxRate
+        - projectCode
+      properties:
+        vendorId: { type: string }
+        budgetLineId: { type: string }
+        region:
+          type: string
+          enum: [HK, CN, MY, ID]
+        localCurrency: { type: string }
+        localAmount: { type: number }
+        hkdAmount: { type: number }
+        fxRate: { type: number }
+        projectCode: { type: string }
+        paymentTerms: { type: string }
+        expectedSettlementAmount: { type: number }
+        expectedSettlementMonth: { type: string }
+        terms: { type: string }
+        deliveryAddress: { type: string }
+        taxId: { type: string }
+        createdBy: { type: string }
+        level1Approver: { type: string }
+        level2Approver: { type: string }
+        level3Approver: { type: string }
+    AdvanceProcurementInput:
+      type: object
+      required: [toStatus, actorId]
+      properties:
+        toStatus:
+          type: string
+          enum: [PR_APPROVED, PO_ISSUED, MILESTONE_RECEIVED, INVOICE_PENDING, PAYMENT_APPROVED, PAID]
+        actorId: { type: string }
+        note: { type: string }
+    ReviewDecisionInput:
+      type: object
+      required: [reviewType, decision, reviewerId]
+      properties:
+        reviewType:
+          type: string
+          enum: [legal, security]
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        reviewerId: { type: string }
+    CreatePaymentInput:
+      type: object
+      required: [dueDate, amount, isMilestonePayment]
+      properties:
+        dueDate: { type: string }
+        amount: { type: number }
+        isMilestonePayment: { type: boolean }
+        milestoneNumber: { type: number }
+        milestoneDescription: { type: string }
+    InvoiceInput:
+      type: object
+      required: [invoiceAmount, invoiceNumber]
+      properties:
+        invoiceAmount: { type: number }
+        invoiceDate: { type: string }
+        invoiceNumber: { type: string }
+        ocrInvoiceData:
+          type: object
+          additionalProperties: true
+    VarianceResolutionInput:
+      type: object
+      required: [resolvedBy, resolutionNotes]
+      properties:
+        resolvedBy: { type: string }
+        resolutionNotes: { type: string }
+        requireLegalConsultation: { type: boolean }
+    SignoffInput:
+      type: object
+      required: [headId, financeId]
+      properties:
+        headId: { type: string }
+        financeId: { type: string }
+    PaidInput:
+      type: object
+      required: [paidAmount, paymentReference, paidBy]
+      properties:
+        paidAmount: { type: number }
+        paymentReference: { type: string }
+        paidBy: { type: string }
+    PaymentSchedule:
+      type: object
+      required: [id, procurementId, dueDate, amount, isMilestonePayment, isVarianceDetected]
+      properties:
+        id: { type: string }
+        procurementId: { type: string }
+        dueDate: { type: string }
+        amount: { type: number }
+        isMilestonePayment: { type: boolean }
+        milestoneNumber: { type: number }
+        milestoneDescription: { type: string }
+        invoiceAmount: { type: number }
+        invoiceNumber: { type: string }
+        isVarianceDetected: { type: boolean }
+        varianceType: { type: string }
+        varianceAmount: { type: number }
+        varianceResolutionNotes: { type: string }
+        dualSignoffAt: { type: string }
+        paidAt: { type: string }
+        paidAmount: { type: number }
+        paymentReference: { type: string }
+        threeWayMatch: { type: string }
+    ThreeWayMatch:
+      type: object
+      required: [id, procurementId, status]
+      properties:
+        id: { type: string }
+        procurementId: { type: string }
+        paymentScheduleId: { type: string }
+        poAmount: { type: number }
+        invoiceAmount: { type: number }
+        milestoneAmount: { type: number }
+        priceVariance: { type: number }
+        shippingTaxVariance: { type: number }
+        status:
+          type: string
+          enum: [PENDING, MATCHED, PRICE_VARIANCE, SHIPPING_TAX_VARIANCE, BLOCKED]
+        matchedAt: { type: string }
+        notes: { type: string }
+    BudgetSummaryRow:
+      type: object
+      required: [fiscalYear, category, allocated, incurred, paid, remaining]
+      properties:
+        fiscalYear: { type: number }
+        category: { type: string }
+        allocated: { type: number }
+        incurred: { type: number }
+        paid: { type: number }
+        remaining: { type: number }
+    DlqEntry:
+      type: object
+      required: [id, status, retryCount, maxRetries]
+      properties:
+        id: { type: string }
+        status: { type: string }
+        errorCode: { type: string }
+        errorMessage: { type: string }
+        retryCount: { type: number }
+        maxRetries: { type: number }
+        createdAt: { type: string }
+        updatedAt: { type: string }
 

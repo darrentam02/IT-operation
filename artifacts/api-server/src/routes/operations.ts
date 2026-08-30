@@ -1,15 +1,50 @@
 import { Router, type IRouter } from "express";
 import {
+  AdvanceProcurementStatusBody,
+  AdvanceProcurementStatusParams,
+  AdvanceProcurementStatusResponse,
   ApproveProcurementParams,
   ApproveProcurementResponse,
+  CreatePaymentScheduleBody,
+  CreatePaymentScheduleParams,
+  CreatePaymentScheduleResponse,
+  CreateProcurementRecordBody,
+  CreateProcurementRecordResponse,
+  DiscardDlqEntryParams,
+  DiscardDlqEntryResponse,
+  DualSignoffBody,
+  DualSignoffParams,
+  DualSignoffResponse,
+  GetBudgetSummaryQueryParams,
+  GetBudgetSummaryResponse,
   GetDashboardSummaryResponse,
+  GetThreeWayMatchParams,
+  GetThreeWayMatchResponse,
   GetTreasuryAnalyticsResponse,
   ListAuditLogsResponse,
+  ListDlqEntriesQueryParams,
+  ListDlqEntriesResponse,
+  ListPaymentSchedulesParams,
+  ListPaymentSchedulesResponse,
   ListProcurementRecordsResponse,
   ListReleaseGatesResponse,
   ListStaffResponse,
+  MarkPaidBody,
+  MarkPaidParams,
+  MarkPaidResponse,
+  ReprocessDlqEntryParams,
+  ReprocessDlqEntryResponse,
+  ResolveVarianceBody,
+  ResolveVarianceParams,
+  ResolveVarianceResponse,
   SearchComplianceBody,
   SearchComplianceResponse,
+  SubmitInvoiceBody,
+  SubmitInvoiceParams,
+  SubmitInvoiceResponse,
+  SubmitProcurementReviewBody,
+  SubmitProcurementReviewParams,
+  SubmitProcurementReviewResponse,
   ToggleReleaseGateParams,
   ToggleReleaseGateResponse,
   UpdateStaffStatusBody,
@@ -19,13 +54,40 @@ import {
 import { deepseek } from "../integrations/deepseek";
 import {
   approveProcurement,
+  advanceProcurementStatus,
+  checkBudgetAvailability,
+  createPaymentSchedule,
+  createProcurementRecord,
+  discardDlq,
+  dualSignoff,
+  getPaymentSchedule,
+  getProcurementById,
+  getThreeWayMatch,
+  listDlq,
+  listPaymentSchedules,
+  loadBudgetSummary,
   loadDashboardStats,
   loadProcurement,
   loadStaff,
+  markPaid,
+  reprocessDlq,
+  resolveVariance,
+  submitInvoice,
+  submitReview,
   updateStaffStatus,
 } from "../lib/db-runtime";
+import {
+  CircuitBreaker,
+  CircuitOpenError,
+  withRetry,
+} from "../lib/resilience";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
+
+// Circuit breakers for downstream resilience boundaries.
+const dbBreaker = new CircuitBreaker("db", 5, 30_000);
+const budgetBreaker = new CircuitBreaker("budget-fx", 5, 30_000);
 
 const staff = [
   { id: "s-001", name: "Maya Chen", initials: "MC", role: "Incident Commander", team: "Platform Reliability", region: "HK", status: "On Call - Incidents", ticket: "INC-4821", environment: "PROD", eta: "42 min", updatedAt: "1 min ago", isStale: false },
@@ -181,6 +243,281 @@ router.post("/compliance/search", async (req, res) => {
 
 router.get("/audit-logs", (_req, res) => {
   res.json(ListAuditLogsResponse.parse(auditLogs));
+});
+
+// ---------------------------------------------------------------------
+// Budget summary
+// ---------------------------------------------------------------------
+router.get("/budget/summary", async (req, res) => {
+  const query = GetBudgetSummaryQueryParams.safeParse(req.query);
+  const year = query.success && query.data.year != null ? Number(query.data.year) : undefined;
+  try {
+    const rows = await dbBreaker.run(async () => {
+      const budgetRows = await loadBudgetSummary(year);
+      if (!budgetRows) throw new Error("budget data unavailable");
+      return budgetRows;
+    });
+    res.json(GetBudgetSummaryResponse.parse(rows.map((r) => ({
+      fiscalYear: r.fiscalYear,
+      category: r.category,
+      allocated: r.allocated,
+      incurred: r.incurred,
+      paid: r.paid,
+      remaining: r.remaining,
+    }))));
+  } catch (error) {
+    if (error instanceof CircuitOpenError) {
+      res.status(503).json({ error: "Budget service temporarily unavailable", code: "CIRCUIT_OPEN" });
+      return;
+    }
+    res.json(GetBudgetSummaryResponse.parse([]));
+  }
+});
+
+// ---------------------------------------------------------------------
+// PR/PO workflow
+// ---------------------------------------------------------------------
+// POST /procurement — create a PR with budget pre-check
+router.post("/procurement", async (req, res) => {
+  const body = CreateProcurementRecordBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Invalid procurement creation payload" });
+    return;
+  }
+  const budget = await checkBudgetAvailability(body.data.budgetLineId, body.data.hkdAmount);
+  if (!budget.ok) {
+    res.status(409).json({ error: budget.reason ?? "Budget pre-check failed", code: "BUDGET" });
+    return;
+  }
+  try {
+    const record = await createProcurementRecord(body.data as unknown as Record<string, unknown>);
+    if (!record) {
+      res.status(500).json({ error: "Failed to create procurement record", code: "DB_ERROR" });
+      return;
+    }
+    res.status(201).json(CreateProcurementRecordResponse.parse(record));
+  } catch (error) {
+    logger.error({ err: error }, "failed to create procurement record");
+    res.status(500).json({ error: "Failed to create procurement record" });
+  }
+});
+
+// PATCH /procurement/:id/status — advance tiered lifecycle
+router.patch("/procurement/:id/status", async (req, res) => {
+  const params = AdvanceProcurementStatusParams.safeParse(req.params);
+  const body = AdvanceProcurementStatusBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid status transition payload" });
+    return;
+  }
+  try {
+    const result = await dbBreaker.run(() =>
+      advanceProcurementStatus(params.data.id, body.data.toStatus, body.data.actorId),
+    );
+    if (!result.ok) {
+      res.status(409).json({ error: result.error, code: result.code ?? "TRANSITION" });
+      return;
+    }
+    res.json(AdvanceProcurementStatusResponse.parse(result.record));
+  } catch (error) {
+    if (error instanceof CircuitOpenError) {
+      res.status(503).json({ error: error.message, code: "CIRCUIT_OPEN" });
+      return;
+    }
+    logger.error({ err: error }, "failed to advance procurement status");
+    res.status(500).json({ error: "Failed to advance procurement status" });
+  }
+});
+
+// PATCH /procurement/:id/review — legal or security review decision
+router.patch("/procurement/:id/review", async (req, res) => {
+  const params = SubmitProcurementReviewParams.safeParse(req.params);
+  const body = SubmitProcurementReviewBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid review payload" });
+    return;
+  }
+  const result = await dbBreaker.run(() =>
+    submitReview(params.data.id, body.data.reviewType, body.data.decision, body.data.reviewerId),
+  );
+  if (!result.ok) {
+    if (result.code === "REVIEW_NOT_REQUIRED") {
+      res.status(409).json({ error: result.error, code: result.code });
+      return;
+    }
+    res.status(409).json({ error: result.error, code: result.code ?? "REVIEW" });
+    return;
+  }
+  res.json(SubmitProcurementReviewResponse.parse(result.record));
+});
+
+// ---------------------------------------------------------------------
+// Payment schedules + three-way match
+// ---------------------------------------------------------------------
+router.get("/procurement/:id/payments", async (req, res) => {
+  const params = ListPaymentSchedulesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid payment list payload" });
+    return;
+  }
+  const rows = await listPaymentSchedules(params.data.id);
+  res.json(ListPaymentSchedulesResponse.parse(rows ?? []));
+});
+
+router.post("/procurement/:id/payments", async (req, res) => {
+  const params = CreatePaymentScheduleParams.safeParse(req.params);
+  const body = CreatePaymentScheduleBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid payment schedule payload" });
+    return;
+  }
+  const record = await getProcurementById(params.data.id);
+  if (!record) {
+    res.status(404).json({ error: "Procurement record not found", code: "NOT_FOUND" });
+    return;
+  }
+  try {
+    const schedule = await createPaymentSchedule(params.data.id, body.data as unknown as Record<string, unknown>);
+    if (!schedule) {
+      res.status(409).json({ error: "Milestones would exceed PO amount", code: "MILESTONE_OVERFLOW" });
+      return;
+    }
+    res.status(201).json(CreatePaymentScheduleResponse.parse(schedule));
+  } catch {
+    res.status(409).json({ error: "Milestones would exceed PO amount", code: "MILESTONE_OVERFLOW" });
+  }
+});
+
+// PATCH /payments/:id/invoice — submit invoice / OCR, triggers 3-way match
+router.patch("/payments/:id/invoice", async (req, res) => {
+  const params = SubmitInvoiceParams.safeParse(req.params);
+  const body = SubmitInvoiceBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid invoice payload" });
+    return;
+  }
+  try {
+    const schedule = await withRetry(
+      () => submitInvoice(params.data.id, body.data as unknown as Record<string, unknown>),
+      { maxAttempts: 3, baseDelayMs: 1000 },
+    );
+    if (!schedule) {
+      res.status(404).json({ error: "Payment schedule not found", code: "NOT_FOUND" });
+      return;
+    }
+    res.json(SubmitInvoiceResponse.parse(schedule));
+  } catch {
+    res.status(500).json({ error: "Failed to submit invoice" });
+  }
+});
+
+// GET /payments/:id/three-way — three-way match result
+router.get("/payments/:id/three-way", async (req, res) => {
+  const params = GetThreeWayMatchParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid three-way match payload" });
+    return;
+  }
+  const match = await getThreeWayMatch(params.data.id);
+  if (!match) {
+    res.status(404).json({ error: "No three-way match found", code: "NOT_FOUND" });
+    return;
+  }
+  res.json(GetThreeWayMatchResponse.parse(match));
+});
+
+// PATCH /payments/:id/variance — resolve blocked variance
+router.patch("/payments/:id/variance", async (req, res) => {
+  const params = ResolveVarianceParams.safeParse(req.params);
+  const body = ResolveVarianceBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid variance resolution payload" });
+    return;
+  }
+  const result = await dbBreaker.run(() =>
+    resolveVariance(params.data.id, body.data.resolvedBy, body.data.resolutionNotes),
+  );
+  if (!result.ok) {
+    res.status(409).json({ error: result.error, code: result.code ?? "VARIANCE" });
+    return;
+  }
+  res.json(ResolveVarianceResponse.parse(result.schedule));
+});
+
+// PATCH /payments/:id/signoff — dual sign-off (< 250k skip)
+router.patch("/payments/:id/signoff", async (req, res) => {
+  const params = DualSignoffParams.safeParse(req.params);
+  const body = DualSignoffBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid sign-off payload" });
+    return;
+  }
+  const result = await dbBreaker.run(() =>
+    dualSignoff(params.data.id, body.data.headId, body.data.financeId),
+  );
+  if (!result.ok) {
+    res.status(409).json({ error: result.error, code: result.code ?? "SIGNOFF" });
+    return;
+  }
+  res.json(DualSignoffResponse.parse(result.schedule));
+});
+
+// PATCH /payments/:id/pay — mark paid
+router.patch("/payments/:id/pay", async (req, res) => {
+  const params = MarkPaidParams.safeParse(req.params);
+  const body = MarkPaidBody.safeParse(req.body);
+  if (!params.success || !body.success) {
+    res.status(400).json({ error: "Invalid payment payload" });
+    return;
+  }
+  const result = await dbBreaker.run(() =>
+    markPaid(params.data.id, body.data.paidAmount, body.data.paymentReference),
+  );
+  if (!result.ok) {
+    res.status(409).json({ error: result.error, code: result.code ?? "PAYMENT" });
+    return;
+  }
+  res.json(MarkPaidResponse.parse(result.schedule));
+});
+
+// ---------------------------------------------------------------------
+// DLQ management
+// ---------------------------------------------------------------------
+router.get("/dlq", async (req, res) => {
+  const query = ListDlqEntriesQueryParams.safeParse(req.query);
+  const status = query.success && query.data.status ? String(query.data.status) : undefined;
+  const rows = await listDlq(status);
+  res.json(ListDlqEntriesResponse.parse(rows ?? []));
+});
+
+router.patch("/dlq/:id/reprocess", async (req, res) => {
+  const params = ReprocessDlqEntryParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid DLQ payload" });
+    return;
+  }
+  const ok = await reprocessDlq(params.data.id);
+  if (!ok) {
+    res.status(409).json({ error: "Entry cannot be reprocessed", code: "DLQ" });
+    return;
+  }
+  const entry = (await listDlq())?.find((e) => e.id === params.data.id);
+  res.json(ReprocessDlqEntryResponse.parse(entry ?? { id: params.data.id, status: "PENDING", retryCount: 0, maxRetries: 5 }));
+});
+
+router.patch("/dlq/:id/discard", async (req, res) => {
+  const params = DiscardDlqEntryParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid DLQ payload" });
+    return;
+  }
+  const ok = await discardDlq(params.data.id);
+  if (!ok) {
+    res.status(409).json({ error: "Entry cannot be discarded", code: "DLQ" });
+    return;
+  }
+  const entry = (await listDlq())?.find((e) => e.id === params.data.id);
+  res.json(DiscardDlqEntryResponse.parse(entry ?? { id: params.data.id, status: "DISCARDED", retryCount: 0, maxRetries: 5 }));
 });
 
 export default router;

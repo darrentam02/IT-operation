@@ -116,3 +116,187 @@ export interface AuditLog {
   deputy: boolean;
 }
 
+export interface ErrorResponse {
+  error: string;
+  code?: string;
+}
+
+export type CreateProcurementInputRegion = typeof CreateProcurementInputRegion[keyof typeof CreateProcurementInputRegion];
+
+
+export const CreateProcurementInputRegion = {
+  HK: 'HK',
+  CN: 'CN',
+  MY: 'MY',
+  ID: 'ID',
+} as const;
+
+export interface CreateProcurementInput {
+  vendorId: string;
+  budgetLineId: string;
+  region: CreateProcurementInputRegion;
+  localCurrency: string;
+  localAmount: number;
+  hkdAmount: number;
+  fxRate: number;
+  projectCode: string;
+  paymentTerms?: string;
+  expectedSettlementAmount?: number;
+  expectedSettlementMonth?: string;
+  terms?: string;
+  deliveryAddress?: string;
+  taxId?: string;
+  createdBy?: string;
+  level1Approver?: string;
+  level2Approver?: string;
+  level3Approver?: string;
+}
+
+export type AdvanceProcurementInputToStatus = typeof AdvanceProcurementInputToStatus[keyof typeof AdvanceProcurementInputToStatus];
+
+
+export const AdvanceProcurementInputToStatus = {
+  PR_APPROVED: 'PR_APPROVED',
+  PO_ISSUED: 'PO_ISSUED',
+  MILESTONE_RECEIVED: 'MILESTONE_RECEIVED',
+  INVOICE_PENDING: 'INVOICE_PENDING',
+  PAYMENT_APPROVED: 'PAYMENT_APPROVED',
+  PAID: 'PAID',
+} as const;
+
+export interface AdvanceProcurementInput {
+  toStatus: AdvanceProcurementInputToStatus;
+  actorId: string;
+  note?: string;
+}
+
+export type ReviewDecisionInputReviewType = typeof ReviewDecisionInputReviewType[keyof typeof ReviewDecisionInputReviewType];
+
+
+export const ReviewDecisionInputReviewType = {
+  legal: 'legal',
+  security: 'security',
+} as const;
+
+export type ReviewDecisionInputDecision = typeof ReviewDecisionInputDecision[keyof typeof ReviewDecisionInputDecision];
+
+
+export const ReviewDecisionInputDecision = {
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+} as const;
+
+export interface ReviewDecisionInput {
+  reviewType: ReviewDecisionInputReviewType;
+  decision: ReviewDecisionInputDecision;
+  reviewerId: string;
+}
+
+export interface CreatePaymentInput {
+  dueDate: string;
+  amount: number;
+  isMilestonePayment: boolean;
+  milestoneNumber?: number;
+  milestoneDescription?: string;
+}
+
+export type InvoiceInputOcrInvoiceData = { [key: string]: unknown };
+
+export interface InvoiceInput {
+  invoiceAmount: number;
+  invoiceDate?: string;
+  invoiceNumber: string;
+  ocrInvoiceData?: InvoiceInputOcrInvoiceData;
+}
+
+export interface VarianceResolutionInput {
+  resolvedBy: string;
+  resolutionNotes: string;
+  requireLegalConsultation?: boolean;
+}
+
+export interface SignoffInput {
+  headId: string;
+  financeId: string;
+}
+
+export interface PaidInput {
+  paidAmount: number;
+  paymentReference: string;
+  paidBy: string;
+}
+
+export interface PaymentSchedule {
+  id: string;
+  procurementId: string;
+  dueDate: string;
+  amount: number;
+  isMilestonePayment: boolean;
+  milestoneNumber?: number;
+  milestoneDescription?: string;
+  invoiceAmount?: number;
+  invoiceNumber?: string;
+  isVarianceDetected: boolean;
+  varianceType?: string;
+  varianceAmount?: number;
+  varianceResolutionNotes?: string;
+  dualSignoffAt?: string;
+  paidAt?: string;
+  paidAmount?: number;
+  paymentReference?: string;
+  threeWayMatch?: string;
+}
+
+export type ThreeWayMatchStatus = typeof ThreeWayMatchStatus[keyof typeof ThreeWayMatchStatus];
+
+
+export const ThreeWayMatchStatus = {
+  PENDING: 'PENDING',
+  MATCHED: 'MATCHED',
+  PRICE_VARIANCE: 'PRICE_VARIANCE',
+  SHIPPING_TAX_VARIANCE: 'SHIPPING_TAX_VARIANCE',
+  BLOCKED: 'BLOCKED',
+} as const;
+
+export interface ThreeWayMatch {
+  id: string;
+  procurementId: string;
+  paymentScheduleId?: string;
+  poAmount?: number;
+  invoiceAmount?: number;
+  milestoneAmount?: number;
+  priceVariance?: number;
+  shippingTaxVariance?: number;
+  status: ThreeWayMatchStatus;
+  matchedAt?: string;
+  notes?: string;
+}
+
+export interface BudgetSummaryRow {
+  fiscalYear: number;
+  category: string;
+  allocated: number;
+  incurred: number;
+  paid: number;
+  remaining: number;
+}
+
+export interface DlqEntry {
+  id: string;
+  status: string;
+  errorCode?: string;
+  errorMessage?: string;
+  retryCount: number;
+  maxRetries: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type GetBudgetSummaryParams = {
+year?: number;
+};
+
+export type ListDlqEntriesParams = {
+status?: string;
+};
+

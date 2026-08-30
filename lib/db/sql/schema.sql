@@ -67,7 +67,6 @@ CREATE TABLE fx_rates (
 -- Budget Lines (IT CapEx/OpEx — yearly, category: HARDWARE/SOFTWARE/DATA/SERVICES)
 -- Budget first: allocated at year start, incurred on PR approval, paid on payment.
 -- ---------------------------------------------------------------------
-CREATE TYPE budget_category AS ENUM ('HARDWARE', 'SOFTWARE', 'DATA', 'SERVICES');
 
 CREATE TABLE budget_lines (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -134,7 +133,7 @@ CREATE TABLE procurement_records (
     fx_rate NUMERIC(18, 6) NOT NULL,
     payment_terms TEXT,                     -- e.g., 'NET 60', 'MILESTONE 3:4:3'
     expected_settlement_amount NUMERIC(15, 2),  -- expected total settlement in HKD
-    expected_settlement_month DATE,         -- expected settlement month (first day of month)
+    expected_settlement_month TEXT,       -- expected settlement month (YYYY-MM)
     terms TEXT,                             -- detailed terms/conditions
     delivery_address TEXT,
     tax_id TEXT,
@@ -221,7 +220,8 @@ CREATE TABLE three_way_matches (
     matched_by UUID REFERENCES profiles(id),
     notes TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (procurement_id, payment_schedule_id)
 );
 
 -- ---------------------------------------------------------------------
@@ -253,6 +253,27 @@ CREATE TABLE audit_logs (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ---------------------------------------------------------------------
+-- Dead Letter Queue (DLQ) — persistence for malformed/unhandled work
+-- ---------------------------------------------------------------------
+CREATE TABLE dlq_entries (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    status TEXT NOT NULL DEFAULT 'PENDING',          -- PENDING | REPROCESSING | SUCCESS | DISCARDED | FAILED
+    payload JSONB NOT NULL,                            -- original request/event payload
+    error_code TEXT,                                   -- machine-readable error code
+    error_message TEXT,                                -- human-readable reason
+    retry_count INT NOT NULL DEFAULT 0,
+    max_retries INT NOT NULL DEFAULT 5,
+    next_attempt_at TIMESTAMPTZ,
+    last_error_at TIMESTAMPTZ,
+    resolved_by UUID REFERENCES profiles(id),
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_dlq_status ON dlq_entries(status);
+CREATE INDEX idx_dlq_created ON dlq_entries(created_at);
+
 -- =====================================================================
 -- ROW LEVEL SECURITY  (guardrail A: complete policies for EVERY table)
 -- =====================================================================
@@ -267,6 +288,8 @@ ALTER TABLE fx_rates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knowledge_base_vectors ENABLE ROW LEVEL SECURITY;
 ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budget_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE three_way_matches ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dlq_entries ENABLE ROW LEVEL SECURITY;
 
 -- Helper: is the current user an admin (SUPER_ADMIN / DEPUTY_HEAD_OF_IT / FINANCE_AUDITOR)?
 CREATE OR REPLACE FUNCTION is_admin_user()
@@ -387,6 +410,11 @@ CREATE POLICY audit_insert_only ON audit_logs FOR INSERT WITH CHECK (true);
 CREATE POLICY audit_select_admin ON audit_logs FOR SELECT USING (
   EXISTS (SELECT 1 FROM profiles WHERE profiles.id = auth.uid() AND role IN ('SUPER_ADMIN', 'DEPUTY_HEAD_OF_IT', 'FINANCE_AUDITOR'))
 );
+
+-- ============ dlq_entries (DLQ lifecycle: insert by system; admin manage) ============
+-- System inserts on capture; admins (IT/Finance) read + manage lifecycle.
+CREATE POLICY dlq_select_admin ON dlq_entries FOR SELECT USING (is_admin_user());
+CREATE POLICY dlq_update_admin ON dlq_entries FOR UPDATE USING (is_admin_user());
 
 -- Stored Procedure for Vector Match (spec §9). SECURITY DEFINER so app
 -- can run similarity search through PostgREST/anon role (guardrail: RLS bypass).
@@ -603,32 +631,32 @@ FOR EACH ROW EXECUTE FUNCTION set_review_requirements();
 CREATE OR REPLACE FUNCTION validate_three_way_match()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
-  pr_record RECORD;
+  reference_amount numeric;
   price_variance_pct numeric;
   shipping_tax_variance_pct numeric;
   match_status three_way_match_status;
 BEGIN
   -- Only process when invoice_amount is set/updated
   IF NEW.invoice_amount IS NOT NULL AND (OLD.invoice_amount IS NULL OR OLD.invoice_amount <> NEW.invoice_amount) THEN
-    -- Get the procurement record
-    SELECT * INTO pr_record FROM procurement_records WHERE id = NEW.procurement_id;
-    
-    -- Calculate variances
-    -- Price variance: invoice_amount vs po_amount (hkd_amount) - tolerance 0%
-    price_variance_pct := CASE 
-      WHEN pr_record.hkd_amount > 0 
-      THEN abs((NEW.invoice_amount - pr_record.hkd_amount) / pr_record.hkd_amount * 100)
-      ELSE 0 
+    -- The invoice is matched against THIS schedule's amount:
+    --   - milestone payments: the milestone's target amount (e.g. 3:4:3)
+    --   - single payments:    the full PO / schedule amount
+    reference_amount := NEW.amount;
+
+    -- Price variance: invoice_amount vs schedule amount - tolerance 0%
+    price_variance_pct := CASE
+      WHEN reference_amount > 0
+      THEN abs((NEW.invoice_amount - reference_amount) / reference_amount * 100)
+      ELSE 0
     END;
-    
+
     -- Shipping/Tax variance - tolerance ±2%
-    -- Assuming shipping_tax_variance is tracked separately in variance_amount
-    shipping_tax_variance_pct := CASE 
-      WHEN pr_record.hkd_amount > 0 AND NEW.variance_amount IS NOT NULL
-      THEN abs(NEW.variance_amount / pr_record.hkd_amount * 100)
-      ELSE 0 
+    shipping_tax_variance_pct := CASE
+      WHEN reference_amount > 0 AND NEW.variance_amount IS NOT NULL
+      THEN abs(NEW.variance_amount / reference_amount * 100)
+      ELSE 0
     END;
-    
+
     -- Determine match status
     IF price_variance_pct > 0 THEN
       match_status := 'PRICE_VARIANCE';
@@ -637,13 +665,13 @@ BEGIN
     ELSE
       match_status := 'MATCHED';
     END IF;
-    
+
     -- Upsert three_way_match record
     INSERT INTO three_way_matches (
-      procurement_id, payment_schedule_id, po_amount, invoice_amount, 
+      procurement_id, payment_schedule_id, po_amount, invoice_amount,
       milestone_amount, shipping_tax_variance, status, matched_at, matched_by
     ) VALUES (
-      NEW.procurement_id, NEW.id, pr_record.hkd_amount, NEW.invoice_amount,
+      NEW.procurement_id, NEW.id, reference_amount, NEW.invoice_amount,
       NEW.amount, COALESCE(NEW.variance_amount, 0),
       match_status,
       CASE WHEN match_status = 'MATCHED' THEN NOW() END,
@@ -657,22 +685,22 @@ BEGIN
       matched_at = EXCLUDED.matched_at,
       matched_by = EXCLUDED.matched_by,
       updated_at = NOW();
-    
+
     -- If variance detected, update payment_schedule and procurement status
     IF match_status IN ('PRICE_VARIANCE', 'SHIPPING_TAX_VARIANCE') THEN
       NEW.is_variance_detected := TRUE;
-      NEW.variance_type := CASE 
+      NEW.variance_type := CASE
         WHEN match_status = 'PRICE_VARIANCE' THEN 'PRICE'
-        ELSE 'SHIPPING_TAX' 
+        ELSE 'SHIPPING_TAX'
       END;
-      NEW.variance_amount := CASE 
-        WHEN match_status = 'PRICE_VARIANCE' 
-        THEN NEW.invoice_amount - pr_record.hkd_amount
-        ELSE NEW.variance_amount 
+      NEW.variance_amount := CASE
+        WHEN match_status = 'PRICE_VARIANCE'
+        THEN NEW.invoice_amount - reference_amount
+        ELSE NEW.variance_amount
       END;
-      
+
       -- Update procurement status to VARIANCE_BLOCKED if not already
-      UPDATE procurement_records 
+      UPDATE procurement_records
         SET status = 'VARIANCE_BLOCKED', updated_at = NOW()
       WHERE id = NEW.procurement_id AND status NOT IN ('VARIANCE_BLOCKED', 'PAYMENT_APPROVED', 'PAID');
     END IF;
@@ -695,7 +723,7 @@ BEGIN
   IF NEW.status IS DISTINCT FROM OLD.status THEN
     INSERT INTO audit_logs (actor_id, action_type, target_resource, old_value, new_value)
     VALUES (
-      COALESCE(NEW.level_1_approver, NEW.level_2_approver, NEW.level_3_approver, NEW.created_by, 'system'),
+      COALESCE(NEW.level_1_approver, NEW.level_2_approver, NEW.level_3_approver, NEW.created_by),
       'PROCUREMENT_STATUS_CHANGE',
       'procurement_records',
       jsonb_build_object('status', OLD.status, 'hkd_amount', OLD.hkd_amount),
@@ -724,7 +752,7 @@ BEGIN
      OR NEW.variance_resolved_at IS DISTINCT FROM OLD.variance_resolved_at THEN
     INSERT INTO audit_logs (actor_id, action_type, target_resource, old_value, new_value)
     VALUES (
-      COALESCE(NEW.variance_resolved_by, NEW.dual_signoff_head_id, NEW.dual_signoff_finance_id, NEW.paid_amount::uuid, 'system'),
+      COALESCE(NEW.variance_resolved_by, NEW.dual_signoff_head_id, NEW.dual_signoff_finance_id),
       'PAYMENT_SCHEDULE_CHANGE',
       'payment_schedules',
       jsonb_build_object(
