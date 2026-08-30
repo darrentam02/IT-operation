@@ -14,7 +14,10 @@ sections below document:
    as implemented in the API + DB triggers.
 4. The **bug fixes** required to make the workflow actually run: region enum cast, `expected_settlement_month`
    as text, milestone-aware three-way matching, idempotent seed, audit-trigger actor fallback.
-5. An **updated build-state table** (§13) reflecting what is now implemented vs. still open.
+5. The **React frontend wiring** (§17): the Procurement control surface now drives the live PR/PO workflow,
+   with create-PR, tiered approval + legal/security review, milestones, invoice/three-way match, variance
+   resolution, dual sign-off and payment — all against the live API.
+6. An **updated build-state table** (§13) reflecting what is now implemented vs. still open.
 
 The authoritative backend spec remains `docs/prompt_v3.md` §6. This v4 focuses on the API layer and
 current build state.
@@ -41,6 +44,7 @@ current build state.
 | **Budget API: summary (allocated / incurred / paid / remaining)** | ✅ `GET /api/budget/summary` |
 | **Resilience layer: retry w/ backoff+jitter, circuit breaker, graceful degradation, alerting** | ✅ `lib/resilience.ts` |
 | **Dead-Letter Queue: `dlq_entries` table + RLS + list/reprocess/discard** | ✅ `GET /api/dlq`, `PATCH /api/dlq/:id/reprocess`, `PATCH /api/dlq/:id/discard` |
+| **React Procurement page → live PR/PO workflow (create PR, approvals, milestones, payments)** | ✅ `src/procurement-workflow.tsx`, wired into Router |
 | OpenAPI spec (extended) → zod + react-client codegen | ✅ `lib/api-spec/openapi.yaml`, regenerated |
 | Budget import / export (CSV/Excel upload) | ⬜ Not started |
 | Jira API integration | ⬜ Not started |
@@ -170,5 +174,45 @@ submit invoice → three-way **MATCHED** → dual sign-off (>250k OK; ≤250k co
 
 ---
 
+## 17. React Frontend — live PR/PO Workflow (implemented)
+
+The **Procurement control surface** (`/procurement`) is now fully wired to the live API. The old list +
+single "Approve" button (`useListProcurementRecords` / `useApproveProcurement`) was replaced with a
+self-contained module at `artifacts/it-operations-control-tower/src/procurement-workflow.tsx`, imported
+into `App.tsx` as `ProcurementWorkflowPage` and bound to the `/procurement` route.
+
+### 17.1 What the UI drives (all against live endpoints)
+
+| UI surface | Action → endpoint |
+|------------|-------------------|
+| **New PR** modal | `POST /api/procurement` (vendor/budget/region/FX; live HKD + tier preview; sets `level1/2/3Approver` by HKD band) |
+| **Legal / security review** | `PATCH /api/procurement/:id/review` (shown when `hkd > 100k`) |
+| **Advance to next status** | `PATCH /api/procurement/:id/status` (tier + review + budget gating surfaced as toasts) |
+| **Add milestone** | `POST /api/procurement/:id/payments` (3:4:3; `MILESTONE_OVERFLOW` respected) |
+| **Submit invoice** | `PATCH /api/payments/:id/invoice` → auto three-way match |
+| **Three-way match status** | displayed from the schedule's `threeWayMatch` field |
+| **Resolve variance** | `PATCH /api/payments/:id/variance` (finance + legal notes) |
+| **Dual sign-off** | `PATCH /api/payments/:id/signoff` (shown only for `> HKD 250k`, Head + Finance) |
+| **Mark paid** | `PATCH /api/payments/:id/pay` (budget `paid_amount` via DB trigger) |
+
+### 17.2 Decisions
+
+- **Reference data baked in** from the live DB: six vendors (name/region/currency), four budget lines
+  (category), and the four seeded auth users (Head, Deputy Head, Team Lead, Finance Auditor) as actor IDs.
+- **Approval tier is derived client-side** for display and approver assignment, but the **server remains
+  authoritative** — a minted PR sets `level1Approver` (Team Lead), `level2Approver` (Deputy) when
+  `hkd > 100k`, `level3Approver` (Head) when `hkd > 500k`, matching the API's L2/L3 enforcement.
+- **Errors surface as toasts** with the structured message from the resilience layer (e.g.
+  `REVIEW_GATING`, `APPROVAL_TIER`, `BUDGET`, `SIGNOFF_REQUIRED`, `MILESTONE_OVERFLOW`).
+- **shadcn/ui primitives** (`Dialog`, `Button`, `Input`, `Label`, `Select`, `Textarea`) for the forms,
+  consistent with the existing operational CSS vocabulary for tables/metrics/status pills.
+
+### 17.3 Verification
+
+Frontend `typecheck` and `vite build` are green from a fresh `git reset --hard origin/main` of the WSL
+build clone. No backend/API changes were introduced by this step.
+
+---
+
 *Generated from `prompt_v3.md` — v4 adds the implemented PR/PO + payment API layer, the resilient
-data-access layer, the applied bug fixes, and an updated build state.*
+data-access layer, the applied bug fixes, the React frontend wiring, and an updated build state.*
