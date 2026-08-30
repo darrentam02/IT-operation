@@ -46,18 +46,27 @@ import {
   getGetTreasuryAnalyticsQueryKey,
   getHealthCheckQueryKey,
   getListAuditLogsQueryKey,
+  getListPaymentSchedulesQueryKey,
   getListProcurementRecordsQueryKey,
   getListReleaseGatesQueryKey,
   getListStaffQueryKey,
-  useApproveProcurement,
+  useAdvanceProcurementStatus,
+  useCreatePaymentSchedule,
+  useCreateProcurementRecord,
+  useDualSignoff,
   useGetDashboardSummary,
   useGetTreasuryAnalytics,
   useHealthCheck,
   useListAuditLogs,
+  useListPaymentSchedules,
   useListProcurementRecords,
   useListReleaseGates,
   useListStaff,
+  useMarkPaid,
+  useResolveVariance,
   useSearchCompliance,
+  useSubmitInvoice,
+  useSubmitProcurementReview,
   useToggleReleaseGate,
   useUpdateStaffStatus,
   type AuditLog,
@@ -65,6 +74,7 @@ import {
   type ComplianceAnswer,
   type DashboardSummary,
   type FxRate,
+  type PaymentSchedule,
   type ProcurementRecord,
   type ReleaseGate,
   type StaffMember,
@@ -81,6 +91,26 @@ import {
   type JiraTicket,
   type VendorSubmission,
 } from '@/hooks/use-integrations';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { ProcurementPage as ProcurementWorkflowPage } from '@/procurement-workflow';
 
 const queryClient = new QueryClient();
 
@@ -437,22 +467,6 @@ function ReleasePage() {
   </div>;
 }
 
-function ProcurementPage() {
-  const query = useListProcurementRecords({ query: { queryKey: getListProcurementRecordsQueryKey(), refetchInterval: 30000 } });
-  const approve = useApproveProcurement();
-  const client = useQueryClient();
-  const [filter, setFilter] = useState('All');
-  const [search, setSearch] = useState('');
-  const records = (query.data as ProcurementRecord[] | undefined) ?? [];
-  const statuses = ['All', ...Array.from(new Set(records.map(r => r.status).filter(Boolean)))];
-  const filtered = records.filter(r => `${r.vendor} ${r.prNumber} ${r.poNumber} ${r.region}`.toLowerCase().includes(search.toLowerCase()) && (filter === 'All' || r.status === filter));
-  const varianceCount = records.filter(r => r.match.toLowerCase().includes('variance') || r.match.toLowerCase().includes('blocked')).length;
-  return <div className="page-stack">
-    <div className="mini-metrics"><div className="mini-metric"><span>Open records</span><strong>{formatNumber(records.length)}</strong></div><div className="mini-metric mini-amber"><span>Pending review</span><strong>{formatNumber(records.filter(r => r.status.toLowerCase().includes('pending')).length)}</strong></div><div className="mini-metric mini-coral"><span>Variance flags</span><strong>{formatNumber(varianceCount)}</strong></div><div className="mini-metric mini-teal"><span>In workflow</span><strong>{formatMoney(records.reduce((sum, r) => sum + (r.hkdAmount || 0), 0))}</strong></div></div>
-    <section className="panel"><div className="toolbar-inner"><div className="search-field"><Search size={16} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search vendor, PR, PO" data-testid="input-search-procurement" /></div><div className="segmented">{statuses.map(value => <button className={filter === value ? 'segment-active' : ''} onClick={() => setFilter(value)} key={value} data-testid={`button-filter-${value.toLowerCase().replace(/\s+/g, '-')}`}>{value}</button>)}</div></div>{query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.isLoading ? <LoadingRows count={5} /> : !filtered.length ? <EmptyState title={records.length ? 'No matching records' : 'No procurement records'} detail={records.length ? 'Try a different vendor, reference, or status.' : 'Purchase requests will appear when the workflow feed returns.'} icon={ClipboardCheck} /> : <div className="procurement-table"><div className="table-head procurement-head"><span>Reference</span><span>Vendor</span><span>Region</span><span>Amount</span><span>Match</span><span>State</span><span /></div>{filtered.map(record => <div className="table-row procurement-row" key={record.id} data-testid={`row-procurement-${record.id}`}><span><b className="font-mono">{record.prNumber}</b><small className="font-mono">{record.poNumber || 'PO pending'}</small></span><span><b>{record.vendor}</b><small>Created {formatDate(record.createdAt)}</small></span><span>{record.region}</span><span><b>{formatMoney(record.amount, record.currency)}</b><small>{formatMoney(record.hkdAmount, 'HKD')} equivalent</small></span><span><StatusPill value={record.match} testId={`status-match-${record.id}`} /></span><span><StatusPill value={record.status} testId={`status-procurement-${record.id}`} /></span>{record.status.toLowerCase().includes('pending') ? <button className="row-action row-action-approve" onClick={() => approve.mutate({ id: record.id }, { onSuccess: () => { void client.invalidateQueries({ queryKey: getListProcurementRecordsQueryKey() }); toast.success(`${record.prNumber} approved`); }, onError: () => toast.error('Approval failed') })} disabled={approve.isPending} data-testid={`button-approve-${record.id}`}><Check size={14} /> Approve</button> : <span className="muted-label">—</span>}</div>)}</div>}</section>
-    <VendorSubmissionsSection />
-  </div>;
-}
 
 function VendorSubmissionsSection() {
   const vendorQuery = useVendorSubmissions();
@@ -557,7 +571,7 @@ function Router() {
     <Route path="/" component={DashboardPage} />
     <Route path="/staff" component={StaffPage} />
     <Route path="/release" component={ReleasePage} />
-    <Route path="/procurement" component={ProcurementPage} />
+    <Route path="/procurement" component={ProcurementWorkflowPage} />
     <Route path="/treasury" component={TreasuryPage} />
     <Route path="/compliance" component={CompliancePage} />
     <Route path="/admin" component={AdminPage} />
