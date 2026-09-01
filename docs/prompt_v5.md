@@ -42,7 +42,7 @@ persistent vector store, and the current build state.
 | **RAG vector store: pgvector persistence (`rag_chunks`)** | ✅ `lib/rag-store.ts` + `lib/db/sql/rag_chunks.sql` (HNSW 1024-dim, RLS), auto-provisioned at runtime |
 | Jira API integration | ✅ backend (`integrations/jira.ts` + `GET /api/jira/tickets` w/ representative fallback) + frontend wiring |
 | Vendor API integration (portal) | ✅ backend + frontend (see v3) |
-| Supabase Auth 2FA | ✅ login screen + TOTP gate (AuthProvider, `components/auth/`, `hooks/use-auth`) wired into the shell; verify full flow w/ a real 2FA-enabled user |
+| Supabase Auth 2FA | ✅ login screen + TOTP gate (AuthProvider, `components/auth/`, `hooks/use-auth`) wired into the shell; `AUTH_MODE=demo` bypasses the gate for prototyping (`GET /api/auth/mode`); full flow needs a real 2FA-enabled user |
 | Realtime subscriptions | ⬜ Not started |
 
 ---

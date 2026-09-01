@@ -56,6 +56,16 @@ type UserResponse = {
 
 const STORAGE_KEY = 'orbital.auth.session';
 
+export type AuthMode = 'full' | 'demo';
+
+// AUTH_MODE=demo (backend `GET /api/auth/mode`) bypasses the 2FA gate for
+// prototyping/UI demos. This session only marks the app as "signed in" client-side.
+const DEMO_SESSION: AuthSession = {
+  access_token: 'demo',
+  refresh_token: 'demo',
+  user: { id: 'demo-operator', email: 'demo@orbit.local' },
+};
+
 type AuthContextValue = {
   status: AuthStatus;
   user: AuthUser | null;
@@ -79,6 +89,11 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+async function getJSON<T>(path: string): Promise<T> {
+  const res = await fetch(path, { signal: AbortSignal.timeout(15000) });
+  return (await res.json()) as T;
+}
+
 type PendingTotp = {
   email: string;
   accessToken: string;
@@ -95,11 +110,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const pendingRef = useRef<PendingTotp | null>(null);
+  const demoRef = useRef(false);
 
   // Restore a stored session on boot; validate it against the API server.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let mode: AuthMode = 'full';
+      try {
+        const m = await getJSON<{ mode?: AuthMode }>('/api/auth/mode');
+        if (m.mode === 'demo') mode = 'demo';
+      } catch {
+        // API unreachable; fall back to full auth and let validation surface it.
+      }
+      if (cancelled) return;
+      if (mode === 'demo') {
+        demoRef.current = true;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(DEMO_SESSION));
+        setSession(DEMO_SESSION);
+        setEmail(DEMO_SESSION.user?.email ?? '');
+        setStatus('signedIn');
+        return;
+      }
+      demoRef.current = false;
       let raw: string | null = null;
       try {
         raw = localStorage.getItem(STORAGE_KEY);
@@ -142,6 +175,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     setError(null);
     try {
+      if (demoRef.current) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(DEMO_SESSION));
+        setSession(DEMO_SESSION);
+        setEmail(DEMO_SESSION.user?.email ?? '');
+        setStatus('signedIn');
+        return;
+      }
       const res = await postJSON<LoginResponse>('/api/auth/login', {
         email: em,
         password,
@@ -178,6 +218,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyTotp = useCallback(async (code: string) => {
+    if (demoRef.current) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEMO_SESSION));
+      setSession(DEMO_SESSION);
+      setStatus('signedIn');
+      return;
+    }
     const pending = pendingRef.current;
     if (!pending) {
       setError('Session expired; sign in again');

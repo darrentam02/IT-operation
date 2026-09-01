@@ -7,8 +7,15 @@ import {
   listFactors,
   type AuthFactor,
 } from "../integrations/supabase-auth";
+import { readEnv } from "../integrations/config";
 
 const router: IRouter = Router();
+
+// GET /api/auth/mode — "demo" skips the 2FA gate on the frontend (AUTH_MODE=demo
+// for prototyping only); "full" is the default and requires Supabase login + TOTP.
+router.get("/auth/mode", (_req, res) => {
+  res.json({ mode: readEnv("AUTH_MODE") === "demo" ? "demo" : "full" });
+});
 
 // POST /api/auth/login — email + password; returns session (step 1 of 2FA)
 router.post("/auth/login", async (req, res) => {
