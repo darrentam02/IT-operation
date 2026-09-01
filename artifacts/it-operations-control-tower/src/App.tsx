@@ -94,6 +94,12 @@ import {
   type JiraTicket,
   type VendorSubmission,
 } from '@/hooks/use-integrations';
+import {
+  useRagChat,
+  useRagStatus,
+  type RagAnswer,
+  type RagChatMessage,
+} from '@/hooks/use-rag';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -130,6 +136,7 @@ const navItems: { label: string; href: string; icon: IconType; note?: string }[]
   { label: 'Vendor portal', href: '/vendor', icon: Globe2, note: 'external' },
   { label: 'Treasury', href: '/treasury', icon: WalletCards },
   { label: 'Compliance', href: '/compliance', icon: BookOpen },
+  { label: 'RAG assistant', href: '/assistant', icon: Command },
   { label: 'Administration', href: '/admin', icon: LockKeyhole },
 ];
 
@@ -141,6 +148,7 @@ const pageMeta: Record<string, { eyebrow: string; title: string; description: st
   '/vendor': { eyebrow: 'Supplier / self-service', title: 'Vendor portal', description: 'Purchase orders, milestone deliveries, and invoice submissions for external vendors.' },
   '/treasury': { eyebrow: 'Finance / allocation', title: 'Treasury overview', description: 'Payment velocity, business-unit allocation, and foreign exchange exposure.' },
   '/compliance': { eyebrow: 'Risk / guidance', title: 'Compliance assistant', description: 'Ask a policy question. Get an answer with a source you can inspect.' },
+  '/assistant': { eyebrow: 'Knowledge / RAG', title: 'RAG assistant', description: 'Ask your SOPs anything. Grounded answers with cited sources.' },
   '/admin': { eyebrow: 'Governance / access', title: 'Administration', description: 'Access posture and an immutable trail of operational decisions.' },
 };
 
@@ -559,6 +567,105 @@ function CompliancePage() {
   </div>;
 }
 
+
+function AssistantCitation({ citation }: { citation: RagAnswer['citations'][number] }) {
+  return <div className="citation-card"><div className="citation-meta"><FileCheck2 size={14} /><span>{citation.document}</span><span>§ {citation.section}</span><span>p. {citation.page}</span></div><p>“{citation.excerpt}”</p></div>;
+}
+
+function AssistantPage() {
+  const [messages, setMessages] = useState<RagChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [lastAnswer, setLastAnswer] = useState<RagAnswer | null>(null);
+  const chat = useRagChat();
+  const status = useRagStatus();
+  const live = status.data?.live ?? false;
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = useCallback(() => {
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
+  }, []);
+
+  useEffect(() => { scrollToBottom(); }, [messages, lastAnswer, scrollToBottom]);
+
+  const userMessages = messages.filter((m) => m.role === 'user').slice(-6);
+
+  const send = useCallback((q: string) => {
+    const text = q.trim();
+    if (!text || chat.isPending) return;
+    const history = [...messages, { role: 'user' as const, content: text }];
+    setMessages(history);
+    setInput('');
+    chat.mutate({ question: text, history: userMessages }, {
+      onSuccess: (answer) => {
+        void text;
+        setMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'assistant', content: answer.answer }]);
+        setLastAnswer(answer);
+      },
+      onError: () => {
+        setMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'assistant', content: 'I could not reach the RAG service. Check that the api-server is running and that JINA/DeepSeek keys are configured (fallback data is used otherwise).' }]);
+      },
+    });
+  }, [chat, messages, userMessages]);
+
+  return <div className="page-stack assistant-page">
+    <section className="assistant-hero panel signal-grid">
+      <div className="assistant-orb"><Sparkles size={20} /></div>
+      <div>
+        <span className="eyebrow">Grounded policy chat</span>
+        <h2>Ask your SOPs anything.</h2>
+        <p>A conversational control-room assistant. Every answer is grounded in the IT SOPs and carries a confidence score plus the exact source excerpt.</p>
+      </div>
+      <div className="assistant-status">
+        <StatusPill value={live ? 'Live knowledge base' : 'Representative data'} />
+        <span className="muted-label">{status.isLoading ? 'Checking source status…' : (status.data?.chunks ?? 0) + ' chunks · ' + (status.data?.documents?.length ?? 0) + ' SOPs'}</span>
+      </div>
+    </section>
+
+    <section className="panel chat-panel">
+      <div className="chat-log" ref={listRef} data-testid="assistant-chat-log">
+        {messages.length === 0 && (
+          <div className="compliance-empty chat-empty">
+            <BookOpen size={22} /><strong>Start a conversation</strong>
+            <p>Try a control question below, or type your own in the Q&A bar.</p>
+            <div className="question-chips">
+              <button onClick={() => send('What approval limits apply to a HKD 300,000 purchase order?')} data-testid="button-suggest-limit">Approval limits</button>
+              <button onClick={() => send('When is dual sign-off required for a payment override?')} data-testid="button-suggest-dual">Dual control</button>
+              <button onClick={() => send('What evidence is needed for emergency production changes?')} data-testid="button-suggest-emergency">Emergency change</button>
+              <button onClick={() => send('What are the three-way matching rules for vendor invoices?')} data-testid="button-suggest-matching">Three-way matching</button>
+            </div>
+          </div>
+        )}
+        {messages.map((m, i) => (
+          m.role === 'user'
+            ? <div className="chat-msg chat-user" key={i} data-testid={`msg-user-${i}`}><span className="chat-bubble">{m.content}</span></div>
+            : <div className="chat-msg chat-assistant" key={i} data-testid={`msg-assistant-${i}`}><span className="chat-bubble">{m.content || (chat.isPending ? 'Thinking…' : '')}</span></div>
+        ))}
+        {chat.isPending && <div className="chat-msg chat-assistant"><span className="chat-bubble typing"><i /><i /><i /></span></div>}
+      </div>
+
+      {lastAnswer && !chat.isPending && messages.length > 0 && (
+        <div className="answer-grid chat-answer">
+          <section className="panel answer-card">
+            <div className="answer-top"><span className="eyebrow">Policy answer</span><span className="confidence"><span style={{ width: `${lastAnswer.confidence * 100}%` }} /> {Math.round(lastAnswer.confidence * 100)}% confidence</span></div>
+            <p className="answer-copy">{lastAnswer.answer}</p>
+            <div className="answer-foot"><ShieldCheck size={15} /> Grounded in {lastAnswer.citations.length} cited source{lastAnswer.citations.length === 1 ? '' : 's'}</div>
+          </section>
+          <section className="panel">
+            <SectionHeading eyebrow="Evidence trail" title="Citations" />
+            <div className="citation-list">{lastAnswer.citations.length ? lastAnswer.citations.map((c, i) => <AssistantCitation citation={c} key={`${c.document}-${i}`} />) : <EmptyState title="No citations returned" detail="Ask a narrower policy question for source evidence." icon={FileCheck2} />}</div>
+          </section>
+        </div>
+      )}
+
+      <div className="compliance-search chat-input">
+        <Search size={17} />
+        <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') send(input); }} placeholder="Ask about approvals, release control, vendor management…" data-testid="input-rag-chat" />
+        <button className="button button-primary" onClick={() => send(input)} disabled={chat.isPending || !input.trim()} data-testid="button-send-chat">{chat.isPending ? 'Thinking…' : 'Ask'}<Send size={14} /></button>
+      </div>
+    </section>
+  </div>;
+}
+
 function AdminPage() {
   const query = useListAuditLogs({ query: { queryKey: getListAuditLogsQueryKey(), refetchInterval: 30000 } });
   const [search, setSearch] = useState('');
@@ -585,6 +692,7 @@ function Router() {
     <Route path="/vendor" component={VendorPage} />
     <Route path="/treasury" component={TreasuryPage} />
     <Route path="/compliance" component={CompliancePage} />
+    <Route path="/assistant" component={AssistantPage} />
     <Route path="/admin" component={AdminPage} />
     <Route><NotFoundPage /></Route>
   </Switch></RoutedErrorBoundary></Shell>;
