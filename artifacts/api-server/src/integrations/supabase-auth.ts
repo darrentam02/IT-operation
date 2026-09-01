@@ -14,6 +14,8 @@ export type LoginResult = {
   status?: number;
   message: string;
   session?: SupabaseAuthSession;
+  /** true when the account has TOTP and the returned session is not yet verified */
+  weakSession?: boolean;
 };
 
 export type TotpEnrollment = {
@@ -65,7 +67,14 @@ export async function signInWithPassword(
         ] || (body as { msg?: string }).msg || "Sign in failed",
       };
     }
-    return { ok: true, status: res.status, message: "Signed in", session: body as SupabaseAuthSession };
+    const session = body as SupabaseAuthSession & { weak_session?: boolean };
+    return {
+      ok: true,
+      status: res.status,
+      message: "Signed in",
+      weakSession: session.weak_session === true,
+      session: session,
+    };
   } catch (err) {
     return {
       ok: false,
@@ -125,12 +134,19 @@ export async function enrollTotp(
   }
 }
 
-/** POST /auth/v1/factors/{id}/verify — confirm a TOTP code to finalize the factor. */
+/** POST /auth/v1/factors/{id}/verify — confirm a TOTP code to finalize the factor.
+ *  The verification response carries the refreshed, now-verified session tokens. */
 export async function verifyTotp(
   factorId: string,
   code: string,
   accessToken: string,
-): Promise<{ ok: boolean; challengeId?: string; message: string }> {
+): Promise<{
+  ok: boolean;
+  challengeId?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  message: string;
+}> {
   try {
     // 1) create a challenge
     const chal = await fetch(`${baseUrl()}/auth/v1/factors/${factorId}/challenge`, {
@@ -155,9 +171,55 @@ export async function verifyTotp(
         message: (body.msg as string) || "TOTP code invalid",
       };
     }
-    return { ok: true, challengeId: (body as { id?: string }).id, message: "TOTP verified" };
+    const v = body as {
+      id?: string;
+      access_token?: string;
+      refresh_token?: string;
+    };
+    return {
+      ok: true,
+      challengeId: v.id,
+      accessToken: v.access_token,
+      refreshToken: v.refresh_token,
+      message: "TOTP verified",
+    };
   } catch (err) {
     return { ok: false, message: err instanceof Error ? err.message : "Network error" };
+  }
+}
+
+/** GET /auth/v1/factors — list TOTP (and other) factors for a session token. */
+export type AuthFactor = {
+  id: string;
+  factor_type: string;
+  status: string;
+};
+
+export async function listFactors(
+  accessToken: string,
+): Promise<{ ok: boolean; factors: AuthFactor[]; message?: string }> {
+  try {
+    const res = await fetch(`${baseUrl()}/auth/v1/factors`, {
+      headers: { ...headers(), Authorization: `Bearer ${accessToken}` },
+    });
+    const body = (await res.json()) as {
+      factors?: AuthFactor[];
+      msg?: string;
+    };
+    if (!res.ok) {
+      return {
+        ok: false,
+        factors: [],
+        message: body.msg || "Could not list factors",
+      };
+    }
+    return { ok: true, factors: body.factors ?? [] };
+  } catch (err) {
+    return {
+      ok: false,
+      factors: [],
+      message: err instanceof Error ? err.message : "Network error",
+    };
   }
 }
 

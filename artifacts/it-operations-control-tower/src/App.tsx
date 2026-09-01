@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   LifeBuoy,
   ListChecks,
+  LogOut,
   LockKeyhole,
   Menu,
   MoreHorizontal,
@@ -100,6 +101,12 @@ import {
   type RagAnswer,
   type RagChatMessage,
 } from '@/hooks/use-rag';
+import {
+  AuthProvider,
+  useAuth,
+} from '@/hooks/use-auth';
+import { LoginScreen } from '@/components/auth/login-screen';
+import { TotpScreen } from '@/components/auth/totp-screen';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -261,6 +268,8 @@ function Shell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const meta = pageMeta[location] ?? pageMeta['/'];
+  const { user, logout } = useAuth();
+  const initials = (user?.email?.split('@')[0] ?? 'operator').slice(0, 2).toUpperCase();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -309,7 +318,7 @@ function Shell({ children }: { children: ReactNode }) {
       </nav>
       <div className="sidebar-lower">
         <IntegrationPulse />
-        <button className="profile-row" data-testid="button-profile"><span className="avatar avatar-lime">LC</span><span><strong>Leah Chan</strong><small>Head of IT</small></span><MoreHorizontal size={16} /></button>
+        <button className="profile-row" onClick={() => { void logout(); toast.success('Signed out'); }} data-testid="button-profile"><span className="avatar avatar-lime">{initials}</span><span><strong>{user?.email ?? 'Operator'}</strong><small>Signed in</small></span><LogOut size={16} /></button>
       </div>
     </aside>
     {mobileOpen && <button className="mobile-scrim" onClick={() => setMobileOpen(false)} aria-label="Close navigation" data-testid="button-scrim" />}
@@ -331,8 +340,8 @@ function Shell({ children }: { children: ReactNode }) {
           <div className="sync-status"><span className="signal-dot" /> Live <span className="font-mono">09:42:18</span></div>
           <button className="icon-button notification-button" aria-label="Notifications" data-testid="button-notifications"><Bell size={17} /><i /></button>
           <div className="topbar-profile">
-            <span className="role-badge" data-testid="text-role-badge">Head of IT</span>
-            <div className="top-avatar avatar">LC</div>
+            <span className="role-badge" data-testid="text-role-badge">2FA secured</span>
+            <div className="top-avatar avatar">{initials}</div>
           </div>
         </div>
       </header>
@@ -683,8 +692,18 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
 
+function AuthGate({ children }: { children: ReactNode }) {
+  const { status } = useAuth();
+  if (status === 'restoring') {
+    return <div className="auth-shell"><div className="auth-card auth-loading"><span className="eyebrow">ORBITAL - IT OPERATIONS</span><div className="spinner-ring" /><p className="auth-hint">Restoring secure session...</p></div></div>;
+  }
+  if (status === 'signedOut') return <LoginScreen />;
+  if (status === 'needsTotp') return <TotpScreen />;
+  return <>{children}</>;
+}
+
 function Router() {
-  return <Shell><RoutedErrorBoundary><Switch>
+  return <AuthGate><Shell><RoutedErrorBoundary><Switch>
     <Route path="/" component={DashboardPage} />
     <Route path="/staff" component={StaffPage} />
     <Route path="/release" component={ReleasePage} />
@@ -695,7 +714,7 @@ function Router() {
     <Route path="/assistant" component={AssistantPage} />
     <Route path="/admin" component={AdminPage} />
     <Route><NotFoundPage /></Route>
-  </Switch></RoutedErrorBoundary></Shell>;
+  </Switch></RoutedErrorBoundary></Shell></AuthGate>;
 }
 
 function NotFoundPage() {
@@ -704,7 +723,7 @@ function NotFoundPage() {
 }
 
 function App() {
-  return <QueryClientProvider client={queryClient}><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter><Toaster position="bottom-right" /></QueryClientProvider>;
+  return <QueryClientProvider client={queryClient}><AuthProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><Router /></WouterRouter></AuthProvider><Toaster position="bottom-right" /></QueryClientProvider>;
 }
 
 export default App;

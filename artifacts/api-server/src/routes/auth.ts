@@ -4,6 +4,8 @@ import {
   getUser,
   verifyTotp,
   signOut,
+  listFactors,
+  type AuthFactor,
 } from "../integrations/supabase-auth";
 
 const router: IRouter = Router();
@@ -21,11 +23,19 @@ router.post("/auth/login", async (req, res) => {
     res.status(result.status && result.status < 500 ? result.status : 401).json({ ok: false, message: result.message });
     return;
   }
+  const accessToken = result.session?.access_token;
+  let factors: AuthFactor[] = [];
+  if (result.weakSession && accessToken) {
+    const list = await listFactors(accessToken);
+    factors = list.factors ?? [];
+  }
   res.json({
     ok: true,
-    access_token: result.session?.access_token,
+    access_token: accessToken,
     refresh_token: result.session?.refresh_token,
     user: result.session?.user,
+    weak_session: result.weakSession === true,
+    factors,
   });
 });
 
