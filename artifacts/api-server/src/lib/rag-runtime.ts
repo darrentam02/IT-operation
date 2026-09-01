@@ -4,6 +4,14 @@ import { fileURLToPath } from "node:url";
 import { readFile as readFileP } from "node:fs/promises";
 import { readEnv } from "../integrations/config";
 import { PDFParse } from "pdf-parse";
+import {
+  EMBEDDING_DIM,
+  resolveStore,
+  saveChunks,
+  clearStore,
+  loadAllChunks,
+  retrieveK,
+} from "./rag-store";
 
 // ---------------------------------------------------------------------------
 // Types (kept here as the single source; re-exported by integrations/deepseek
@@ -43,6 +51,7 @@ export type RagIngestStatus = {
   readerOk: boolean;
   embedOk: boolean;
   generation?: string | null;
+  store: "pgvector" | "memory";
 };
 
 // ---------------------------------------------------------------------------
@@ -161,7 +170,7 @@ async function embedTexts(texts: string[]): Promise<number[][] | null> {
         Authorization: `Bearer ${key}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: embedModel(), input: texts }),
+      body: JSON.stringify({ model: embedModel(), input: texts, dimensions: EMBEDDING_DIM }),
     });
     if (!res.ok) return null;
     const json = (await res.json()) as { data: { embedding: number[] }[] };
@@ -288,8 +297,8 @@ let indexPromise: Promise<IndexedChunk[]> | null = null;
 let readerOk = false;
 let embedOk = false;
 
-async function buildIndex(): Promise<IndexedChunk[]> {
-  // 1) Try to ingest the three PDFs (JINA Reader first, local pdf-parse fallback).
+async function ingestPdfDocuments(): Promise<{ docs: RagDocument[]; ok: boolean }> {
+  // Try to ingest the three PDFs (JINA Reader first, local pdf-parse fallback).
   let docs: RagDocument[] = [];
   let seed = 1000;
   for (const rel of RAG_PDF_PATHS) {
@@ -306,20 +315,61 @@ async function buildIndex(): Promise<IndexedChunk[]> {
       // keep going; fall back below
     }
   }
-  readerOk = docs.length > 0;
-  if (!docs.length) {
-    docs = RAG_DOCUMENTS.slice();
+  return { docs, ok: docs.length > 0 };
+}
+
+async function buildIndex(): Promise<IndexedChunk[]> {
+  const store = await resolveStore();
+
+  // pgvector store: reuse persisted chunks+embeddings after a restart instead
+  // of re-reading and re-embedding the PDFs.
+  if (store.mode === "pgvector" && store.pool) {
+    const persisted = await loadAllChunks(store.pool);
+    if (persisted.length) {
+      readerOk = true;
+      embedOk = true;
+      return persisted.map((c) => ({
+        doc: c,
+        embedding: c.embedding,
+        live: true,
+      }));
+    }
   }
 
-  // 2) Embed chunks.
-  const contents = docs.map((d) => d.content);
+  // Extract + embed the three PDFs (also seeds an empty vector store).
+  const { docs, ok } = await ingestPdfDocuments();
+  readerOk = ok;
+  const ready = docs.length ? docs : RAG_DOCUMENTS.slice();
+
+  const contents = ready.map((d) => d.content);
   const vectors = await embedTexts(contents);
   embedOk = Boolean(vectors && vectors.length === contents.length);
-  return docs.map((doc, i) => ({
+  const indexed = ready.map((doc, i) => ({
     doc,
     embedding: vectors && vectors[i] ? vectors[i] : embedStub(doc.content),
     live: Boolean(vectors && vectors[i]),
   }));
+
+  // Persist real embeddings so the next boot loads from the DB; retrieval then
+  // runs as a Postgres vector search instead of the in-memory cosine index.
+  if (store.mode === "pgvector" && store.pool) {
+    const seeded = indexed
+      .filter((c) => c.embedding.length === EMBEDDING_DIM)
+      .map((c) => ({ ...c.doc, embedding: c.embedding }));
+    if (seeded.length) {
+      await saveChunks(store.pool, seeded);
+    }
+    const persisted = await loadAllChunks(store.pool);
+    if (persisted.length) {
+      return persisted.map((c) => ({
+        doc: c,
+        embedding: c.embedding,
+        live: true,
+      }));
+    }
+  }
+
+  return indexed;
 }
 
 function getIndex(): Promise<IndexedChunk[]> {
@@ -349,17 +399,47 @@ async function completeDeepSeek(messages: RagChatMessage[]): Promise<string | nu
         model: chatModel(),
         messages,
         temperature: 0.2,
-        max_tokens: 700,
+        max_tokens: 1500,
       }),
     });
     if (!res.ok) return null;
     const json = (await res.json()) as {
-      choices?: { message?: { content?: string } }[];
+      choices?: {
+        message?: { content?: string; reasoning_content?: string };
+      }[];
     };
-    return json.choices?.[0]?.message?.content ?? null;
+    const message = json.choices?.[0]?.message;
+    const content = message?.content?.trim();
+    if (content) return content;
+    const reasoning = message?.reasoning_content?.trim();
+    return reasoning ? reasoning : null;
   } catch {
     return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Retrieval: vector search in the pgvector store when available, otherwise the
+// in-memory cosine index. Falls back to memory if the DB yields no rows.
+// ---------------------------------------------------------------------------
+async function retrieveRelevant(
+  qVec: number[],
+  topK: number,
+): Promise<Array<{ doc: RagDocument; sim: number }>> {
+  const store = await resolveStore();
+  if (store.mode === "pgvector" && store.pool) {
+    try {
+      const hits = await retrieveK(store.pool, qVec, topK);
+      if (hits.length) return hits;
+    } catch {
+      // fall through to the in-memory index
+    }
+  }
+  const index = await getIndex();
+  return index
+    .map((c) => ({ doc: c.doc, sim: cosine(qVec, c.embedding) }))
+    .sort((a, b) => b.sim - a.sim)
+    .slice(0, topK);
 }
 
 // ---------------------------------------------------------------------------
@@ -376,10 +456,7 @@ export async function askRag(question: string, opts: AskRagOptions = {}): Promis
   const qVec = (await embedText(question)) ?? embedStub(question);
   const live = index.some((c) => c.live);
 
-  const ranked = index
-    .map((c) => ({ ...c, sim: cosine(qVec, c.embedding) }))
-    .sort((a, b) => b.sim - a.sim)
-    .slice(0, topK);
+  const ranked = await retrieveRelevant(qVec, topK);
 
   const threshold = live ? 0.25 : 0.78;
   const [top] = ranked;
@@ -424,7 +501,7 @@ export async function askRag(question: string, opts: AskRagOptions = {}): Promis
   const answer =
     generated ??
     (live
-      ? "Retrieval found relevant excerpts but DeepSeek generation is not configured (DEEPSEEK_API_KEY missing). See citations below."
+      ? "Retrieval found relevant excerpts but answer generation returned nothing. Retry the question; the evidence below is still valid."
       : "Representative RAG answer. Connect DeepSeek + JINA keys for live retrieval-augmented generation.");
 
   return {
@@ -453,10 +530,15 @@ export async function ingestStatus(): Promise<RagIngestStatus> {
     readerOk,
     embedOk,
     generation: isRagConfigured().deepseek ? "deepseek" : null,
+    store: (await resolveStore()).mode,
   };
 }
 
 export async function reingest(): Promise<RagIngestStatus> {
+  const store = await resolveStore();
+  if (store.mode === "pgvector" && store.pool) {
+    await clearStore(store.pool);
+  }
   await resetIndex();
   return ingestStatus();
 }

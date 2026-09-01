@@ -41,6 +41,7 @@ export type RagIngestStatus = {
   readerOk: boolean;
   embedOk: boolean;
   generation?: string | null;
+  store: 'pgvector' | 'memory';
 };
 
 type ChatResponse = RagAnswer;

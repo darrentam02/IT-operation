@@ -617,7 +617,7 @@ function AssistantPage() {
       </div>
       <div className="assistant-status">
         <StatusPill value={live ? 'Live knowledge base' : 'Representative data'} />
-        <span className="muted-label">{status.isLoading ? 'Checking source status…' : (status.data?.chunks ?? 0) + ' chunks · ' + (status.data?.documents?.length ?? 0) + ' SOPs'}</span>
+        <span className="muted-label">{status.isLoading ? 'Checking source status…' : (status.data?.chunks ?? 0) + ' chunks · ' + (status.data?.documents?.length ?? 0) + ' SOPs · ' + (status.data?.store ?? 'memory')}</span>
       </div>
     </section>
 
