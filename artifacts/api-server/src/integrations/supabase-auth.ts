@@ -68,11 +68,12 @@ export async function signInWithPassword(
       };
     }
     const session = body as SupabaseAuthSession & { weak_session?: boolean };
+    const demoAuthMode = readEnv("AUTH_MODE")?.toLowerCase() === "demo";
     return {
       ok: true,
       status: res.status,
       message: "Signed in",
-      weakSession: session.weak_session === true,
+      weakSession: !demoAuthMode && session.weak_session === true,
       session: session,
     };
   } catch (err) {
