@@ -21,7 +21,7 @@ function isDbConfigured(): boolean {
   return Boolean(readEnv("DATABASE_URL"));
 }
 
-async function getPool(): Promise<DbPool | null> {
+export async function getPool(): Promise<DbPool | null> {
   if (!isDbConfigured()) return null;
   if (!poolPromise) {
     poolPromise = import("@workspace/db")
@@ -342,6 +342,7 @@ export async function discardDlq(id: string): Promise<boolean> {
 export type RuntimeBudgetRow = {
   fiscalYear: number;
   category: string;
+  description: string | null;
   allocated: number;
   incurred: number;
   paid: number;
@@ -353,7 +354,7 @@ export async function loadBudgetSummary(year?: number): Promise<RuntimeBudgetRow
   if (!pool) return null;
   try {
     const { rows } = await pool.query(
-      `SELECT fiscal_year AS fy, category, allocated_amount::float8 AS allocated,
+      `SELECT fiscal_year AS fy, category, description, allocated_amount::float8 AS allocated,
               incurred_amount::float8 AS incurred, paid_amount::float8 AS paid
          FROM budget_lines
         WHERE ($1::int IS NULL OR fiscal_year = $1::int)
@@ -363,6 +364,7 @@ export async function loadBudgetSummary(year?: number): Promise<RuntimeBudgetRow
     return rows.map((row) => ({
       fiscalYear: num(row.fy),
       category: str(row.category),
+      description: row.description == null ? null : str(row.description),
       allocated: num(row.allocated),
       incurred: num(row.incurred),
       paid: num(row.paid),

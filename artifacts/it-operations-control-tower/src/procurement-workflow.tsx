@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
   ClipboardCheck,
+  Download,
+  FileSpreadsheet,
   Plus,
   RefreshCw,
+  Upload,
 } from 'lucide-react';
 import {
   getListPaymentSchedulesQueryKey,
@@ -24,6 +27,7 @@ import {
 } from '@workspace/api-client-react';
 import { toast } from 'sonner';
 import { useVendorSubmissions, type VendorSubmission } from '@/hooks/use-integrations';
+import { exportBudget, useImportBudget } from '@/hooks/use-budget';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -561,6 +565,7 @@ export function ProcurementPage() {
         </div>
         <div className="segmented">{statuses.map(value => <button className={filter === value ? 'segment-active' : ''} onClick={() => setFilter(value)} key={value} data-testid={`button-filter-${value.toLowerCase().replace(/\s+/g, '-')}`}>{value}</button>)}</div>
       </div>
+      <BudgetImportExportBlock />
       {query.isError ? <ErrorState onRetry={() => void query.refetch()} /> : query.isLoading ? <LoadingRows count={5} /> : !filtered.length ? <EmptyState title={records.length ? 'No matching records' : 'No procurement records'} detail={records.length ? 'Try a different vendor, reference, or status.' : 'Create a purchase requisition to start the workflow.'} /> : <div className="procurement-table">
         <div className="table-head procurement-head"><span>Reference</span><span>Vendor</span><span>Region</span><span>Amount</span><span>Match</span><span>State</span><span /></div>
         {filtered.map(record => <div className="table-row procurement-row" key={record.id} data-testid={`row-procurement-${record.id}`}>
@@ -598,5 +603,56 @@ function VendorSubmissions() {
         {rows.map((s: VendorSubmission, i: number) => <div className="table-row" key={`${s.poNumber}-${i}`}><span><Pill value={s.type} /></span><span className="font-mono"><b>{s.poNumber}</b></span><span><b>{formatMoney(s.amount, 'HKD')}</b></span><span className="font-mono">{s.vendorId}</span><span className="muted-label">{s.submittedAt}</span></div>)}
       </div> : <EmptyState title="No submissions" detail="The vendor API feed will appear here when connected." />}
     </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Budget import / export toolbar
+// ---------------------------------------------------------------------------
+function BudgetImportExportBlock() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [exporting, setExporting] = useState<'csv' | 'xlsx' | null>(null);
+  const importMutation = useImportBudget();
+
+  const handleExport = async (format: 'csv' | 'xlsx') => {
+    try {
+      setExporting(format);
+      await exportBudget(format);
+      toast.success(`Exported budget lines (${format.toUpperCase()})`);
+    } catch {
+      toast.error('Budget export failed');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const onImportFile = (file: File | null) => {
+    if (!file) return;
+    importMutation.mutate(file, {
+      onSuccess: (res) => {
+        toast.success(`Imported ${res.inserted} new, ${res.updated} updated (${res.skipped} skipped)`);
+      },
+      onError: (err) => {
+        toast.error(`Import failed: ${err instanceof Error ? err.message : 'unknown error'}`);
+      },
+    });
+  };
+
+  return (
+    <div className="toolbar-inner export-toolbar">
+      <div><span className="eyebrow">Budget</span><h2 className="panel-title">Import / export budget lines</h2></div>
+      <div className="export-actions">
+        <button className="button button-quiet" onClick={() => void handleExport('csv')} disabled={exporting !== null || importMutation.isPending} data-testid="button-export-budget-csv">{exporting === 'csv' ? 'Preparing...' : 'CSV'}<Download size={14} /></button>
+        <button className="button button-quiet" onClick={() => void handleExport('xlsx')} disabled={exporting !== null || importMutation.isPending} data-testid="button-export-budget-xlsx">{exporting === 'xlsx' ? 'Preparing...' : 'Excel'}<FileSpreadsheet size={14} /></button>
+        <button className="button button-primary" onClick={() => fileInputRef.current?.click()} disabled={importMutation.isPending} data-testid="button-import-budget">{importMutation.isPending ? 'Importing...' : 'Import budget'}<Upload size={14} /></button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv,.xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          className="hidden"
+          onChange={(e) => { onImportFile(e.target.files?.[0] ?? null); e.target.value = ''; }}
+        />
+      </div>
+    </div>
   );
 }

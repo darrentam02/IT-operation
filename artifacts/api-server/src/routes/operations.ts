@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import multer from "multer";
 import {
   AdvanceProcurementStatusBody,
   AdvanceProcurementStatusParams,
@@ -88,12 +89,18 @@ import {
 } from "../lib/resilience";
 import { logger } from "../lib/logger";
 import { buildTreasuryExport } from "../lib/treasury-export";
+import { buildBudgetExport } from "../lib/budget-export";
+import { parseBudgetImport, upsertBudgetLines } from "../lib/budget-import";
 
 const router: IRouter = Router();
 
 // Circuit breakers for downstream resilience boundaries.
 const dbBreaker = new CircuitBreaker("db", 5, 30_000);
 const budgetBreaker = new CircuitBreaker("budget-fx", 5, 30_000);
+const uploadBudgetFile = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 const staff = [
   { id: "s-001", name: "Maya Chen", initials: "MC", role: "Incident Commander", team: "Platform Reliability", region: "HK", status: "On Call - Incidents", ticket: "INC-4821", environment: "PROD", eta: "42 min", updatedAt: "1 min ago", isStale: false },
@@ -334,6 +341,54 @@ router.get("/budget/summary", async (req, res) => {
       return;
     }
     res.json(GetBudgetSummaryResponse.parse([]));
+  }
+});
+
+
+// ---------------------------------------------------------------------
+// Budget import / export
+// ---------------------------------------------------------------------
+router.get("/budget/export", async (req, res) => {
+  const formatRaw = String(req.query.format || "csv").toLowerCase();
+  const format = formatRaw === "xlsx" ? "xlsx" : "csv";
+  const year = req.query.year != null ? Number(req.query.year) : undefined;
+  try {
+    const rows = await loadBudgetSummary(Number.isNaN(year) ? undefined : year);
+    if (!rows) {
+      res.status(503).json({ error: "Budget data unavailable", code: "DATA_UNAVAILABLE" });
+      return;
+    }
+    const result = await buildBudgetExport(rows, format);
+    res.setHeader("Content-Type", result.contentType);
+    res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(result.buffer);
+  } catch (error) {
+    logger.error({ error }, "budget export failed");
+    res.status(500).json({ error: "Failed to generate budget export" });
+  }
+});
+
+router.post("/budget/import", uploadBudgetFile.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: "No file uploaded", code: "FILE_REQUIRED" });
+      return;
+    }
+    const parsed = await parseBudgetImport(req.file.originalname, req.file.buffer);
+    if (parsed.errors.length > 0) {
+      res.status(400).json({ error: parsed.errors[0], code: "PARSE_ERROR", details: parsed.errors });
+      return;
+    }
+    if (parsed.rows.length === 0) {
+      res.status(400).json({ error: "No valid rows found in file", code: "EMPTY_FILE" });
+      return;
+    }
+    const summary = await upsertBudgetLines(parsed.rows);
+    res.json({ total: summary.total, inserted: summary.inserted, updated: summary.updated, skipped: summary.skipped, errors: summary.errors });
+  } catch (error) {
+    logger.error({ error }, "budget import failed");
+    res.status(500).json({ error: "Failed to import budget file" });
   }
 });
 
