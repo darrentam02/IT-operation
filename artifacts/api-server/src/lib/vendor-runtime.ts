@@ -90,7 +90,7 @@ export type VendorPortal = {
 
 export type VendorResult =
   | { ok: true; data?: unknown }
-  | { ok: false; error: string; code: string; status?: number };
+  | { ok: false; error: string; code: string; status?: number; detail?: string };
 
 // Authenticate a vendor by its dedicated API key (sha256-compare against hash).
 export async function authenticateVendor(apiKey: string): Promise<VendorProfile | null> {
@@ -420,12 +420,14 @@ export async function vendorAcceptPurchaseOrder(
     }
     await pool.query(
       `UPDATE procurement_records
-          SET po_accepted_at = NOW(), po_acceptance_notes = $3
+          SET po_accepted_at = COALESCE(po_accepted_at, NOW()),
+              po_acceptance_notes = $2::text
         WHERE id = $1::uuid`,
       [procurementId, input.notes ? String(input.notes) : null],
     );
     return { ok: true, data: { procurementId, decision } };
-  } catch {
-    return { ok: false, error: "Failed to record PO acceptance", code: "DB_ERROR" };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: "Failed to record PO acceptance", code: "DB_ERROR", detail: msg };
   }
 }

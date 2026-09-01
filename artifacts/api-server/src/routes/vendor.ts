@@ -94,7 +94,9 @@ router.post("/vendor/po-acceptance", vendorAuth, async (req, res) => {
   const vendor = res.locals.vendor as VendorProfile;
   const result = await vendorAcceptPurchaseOrder(vendor.id, (req.body ?? {}) as Record<string, unknown>);
   if (!result.ok) {
-    res.status(result.status ?? 500).json({ error: result.error, code: result.code });
+    const body: Record<string, unknown> = { error: result.error, code: result.code };
+    if ("detail" in result) body.detail = (result as Record<string, unknown>).detail;
+    res.status(result.status ?? 500).json(body);
     return;
   }
   res.json(result.data);
