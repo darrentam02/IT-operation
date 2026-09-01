@@ -3,8 +3,7 @@
 ## 1. Changes in v5 (this document)
 
 v5 carries forward the full v4 specification (PR/PO + payment API layer, resilience layer, React wiring)
-and adds the **completed Budget import / export (CSV/Excel upload + download)** feature, plus locks the
-**RAG chatbox design** (JINA AI + DeepSeek API over three PDFs). The sections below document:
+and adds:
 
 1. The **budget export endpoint** (`GET /api/budget/export`) producing an importable 4-column
    CSV/Excel layout.
@@ -12,13 +11,17 @@ and adds the **completed Budget import / export (CSV/Excel upload + download)** 
    upserting live `budget_lines` on `(fiscal_year, category)`.
 3. The **export/import round-trip contract** — the exported file imports straight back in.
 4. The **React toolbar** on the Procurement page (`Import budget`, `CSV`, `Excel`) and its hook.
-5. The **RAG chatbox architecture** (§21): JINA AI for PDF ingest + embeddings, DeepSeek API for the
-   Q&A generation, over three uploaded PDFs, surfaced in the existing chat surface.
-6. An **updated build-state table** (§13) reflecting what is now implemented vs. planned.
+5. The **RAG chatbox** (§21): **implemented end-to-end** — JINA AI embeddings + DeepSeek API
+   generation over three PDFs, surfaced at `/assistant`. Design is no longer "locked/planned"; every
+   step (ingest → index → retrieve → generate) is shipped and verified live.
+6. **pgvector persistence for the RAG store** (§21.7): chunks + JINA embeddings live in a Supabase
+   `rag_chunks` table with an HNSW index, so the index survives restarts and retrieval is a Postgres
+   vector search (`<=>` cosine), with a graceful in-memory fallback.
+7. An **updated build-state table** (§13) reflecting what is now implemented vs. planned.
 
 The authoritative backend spec remains `docs/prompt_v3.md` §6; the API-layer spec is `docs/prompt_v4.md`
-§14. This v5 focuses on the new budget import/export surface, the RAG chatbox design, and the current
-build state.
+§14. This v5 focuses on the budget import/export surface, the fully-implemented RAG chatbox with its
+persistent vector store, and the current build state.
 
 ---
 
@@ -35,11 +38,11 @@ build state.
 | Resilience layer (retry / circuit breaker / DLQ / degradation / alerting) | ✅ `lib/resilience.ts` |
 | React Procurement page → live PR/PO workflow | ✅ wired into Router |
 | OpenAPI spec → zod + react-client codegen | ✅ `lib/api-spec/openapi.yaml`, regenerated |
-| **RAG chatbox (JINA AI + DeepSeek API + 3 PDFs)** | 🔷 Planned — design locked (see §21) |
+| **RAG chatbox (JINA AI + DeepSeek API + 3 PDFs)** | ✅ Implemented — `/api/rag/*` + `/assistant` page, verified live |
+| **RAG vector store: pgvector persistence (`rag_chunks`)** | ✅ `lib/rag-store.ts` + `lib/db/sql/rag_chunks.sql` (HNSW 1024-dim, RLS), auto-provisioned at runtime |
 | Jira API integration | ⬜ Not started |
 | Vendor API integration (portal) | ✅ backend + frontend (see v3) |
 | Supabase Auth 2FA | ⬜ Not started |
-| Supabase Storage → pgvector pipeline | 🔷 Revised — JINA Reader/embeddings replaces raw pgvector-only pipeline (see §21) |
 | Realtime subscriptions | ⬜ Not started |
 
 ---
@@ -133,75 +136,110 @@ A **Budget import/export** toolbar was added to the Procurement page
 
 ---
 
-## 21. RAG Chatbox — JINA AI + DeepSeek API over three PDFs (design locked)
+## 21. RAG Chatbox — JINA AI + DeepSeek API over three PDFs (implemented)
 
-The chat surface will answer questions grounded in **three reference PDFs** (e.g. IT procurement policy,
-vendor/expense policy, service catalog). The pipeline is deliberately simple and outsources the heavy
-parsing/embedding steps to **JINA AI**, with **DeepSeek** doing answer generation — no custom
-tokenizer/embedding training and no local model hosting.
+The chat surface answers questions grounded in **three reference PDFs**, served at `/assistant` with a
+new `POST /api/rag/chat` route. The pipeline outsources heavy parsing/embedding to **JINA AI** and
+uses **DeepSeek** for grounded answer generation; retrieval runs against a **pgvector** store on
+Supabase with an in-memory cosine fallback. No custom embedding training or local model hosting.
 
 ### 21.1 Components
 
 | Step | Provider | Responsibility |
 |------|----------|----------------|
-| 1. Document ingest | **JINA Reader** API | PDF → clean text/Markdown chunks and clean source (drop headers/footers, layout noise) |
-| 2. Indexing | **JINA Embeddings** API (`jina-embeddings-v3`) | chunk → dense vector (1024-dim), stored/queried for similarity |
-| 3. Retrieval | in-app (pgvector or in-memory FAISS) | top-k most similar chunks for the user query |
-| 4. Generation | **DeepSeek API** | compose the grounded answer from the retrieved chunks + the original chat context |
-| 5. Serving | api-server route | `/api/rag/ask` (POST) + `/api/rag/documents` (ingest/list/delete) |
+| 1. Document ingest | **JINA Reader** (best-effort) + **`pdf-parse`** (reliable local fallback) | PDF → clean text, then ~700-char chunks with page tracking |
+| 2. Indexing | **JINA Embeddings** API (`jina-embeddings-v3`, `dimensions=1024`) | chunk → 1024-dim dense vector, persisted in Supabase `rag_chunks` |
+| 3. Retrieval | **Postgres `<=>` cosine** via pgvector (HNSW), fallback in-memory cosine | top-k most similar chunks for the user query |
+| 4. Generation | **DeepSeek API** (`deepseek-v4-flash`, `deepseek-v4-pro` compatible) | compose the grounded answer from retrieved chunks + chat context |
+| 5. Serving | api-server routes | `chat` / `status` / `documents` / `ingest` |
+
+Implementation: `artifacts/api-server/src/lib/rag-runtime.ts` (pipeline + generation),
+`artifacts/api-server/src/lib/rag-store.ts` (pgvector persistence), frontend
+`artifacts/it-operations-control-tower/src/hooks/use-rag.ts` + `src/App.tsx` (`/assistant`).
 
 ### 21.2 Data flow
 
 ```
-User prompt (chatbox)
+User prompt (chatbox at /assistant)
    │
    ▼
-POST /api/rag/ask { question, history? }
+POST /api/rag/chat { question, history?: [...] }
    │
-   ├─ embed question via JINA Embeddings
-   ├─ top-k similar chunks (pgvector / FAISS)
-   ├─ build prompt: [system: ground rules + sources] + retrieved chunks + user question
-   └─ DeepSeek chat completion  ──►  { answer, sources: [{doc, chunk, score}] }
+   ├─ embed question via JINA Embeddings (1024-dim)
+   ├─ top-k similar chunks:  pgvector `embedding <=> $1::vector` (or in-memory cosine)
+   ├─ threshold gate (live ≥ 0.25; stub fallback ≥ 0.78)
+   ├─ build prompt: [system: ground rules + sources] + retrieved chunks + history + question
+   └─ DeepSeek chat completion  ──►  { answer, confidence, citations: [{document, section, page, excerpt}] }
 ```
 
-### 21.3 The three PDFs
+Answers carry a **confidence score** (`1 − cosine distance`) and **citations** with the exact source
+section/page, e.g. *"A HKD 300,000 purchase order falls under Level 2 … (SOP-MAT-003 §2.1)"*.
 
-Three curated operating documents will be placed under `artifacts/api-server/rag-docs/` (or uploaded
-through the UI) and chunked+embedded on ingest. They are the knowledge base for all chatbox answers.
+### 21.3 The three PDFs (knowledge base)
 
-### 21.4 Env / config
+Placed at the repo root `docs/`, resolved from the module location (`resolvePdfPath`) so the bundle
+works regardless of launch directory:
+
+- `docs/SOP-IT-001-v3.2_IT_Department_SOP.pdf` — release control, change management
+- `docs/SOP-MAT-003-v2.0_Enterprise_IT_Approval_Matrix.pdf` — tiered approval limits, dual control
+- `docs/SOP-PROC-002-v2.1_IT_Procurement_Vendor_Management.pdf` — procurement, three-way matching, vendor access
+
+Ingestion is automatic on first index build (chunks PDFs → embeds → persists). `POST /api/rag/ingest`
+re-parses, wipes the persisted store and reseeds it.
+
+### 21.4 Env / config (`/.env`, template in `/.env.example`)
 
 ```
 JINA_API_KEY=...
-JINA_READER_URL=https://r.jina.ai/          # or direct JINA Reader POST
-JINA_EMBEDDING_MODEL=jina-embeddings-v3
+JINA_READER_URL=https://r.jina.ai/          # best-effort PDF extraction
+JINA_EMBEDDING_MODEL=jina-embeddings-v3     # 1024-dim output
 DEEPSEEK_API_KEY=...
-DEEPSEEK_MODEL=deepseek-chat
-RAG_TOP_K=4
+DEEPSEEK_MODEL=deepseek-v4-flash             # deepseek-v4-pro also verified working
+RAG_VECTOR_STORE=pgvector                    # pgvector (Supabase, persisted) | memory
 ```
+
+`RAG_VECTOR_STORE=memory` forces the legacy in-memory index; the default `pgvector` degrades to
+in-memory automatically when the database is unreachable (RAG never breaks a deployment without a DB).
 
 ### 21.5 Contract
 
 ```
-POST /api/rag/ask
-  req:  { question: string, history?: {role:"user"|"assistant", content:string}[] }
-  res:  { answer: string, sources: { document: string, chunk: string, score: number }[] }
+POST /api/rag/chat
+  req:  { question: string, history?: {role:"user"|"assistant"|"system", content:string}[], topK?: number }
+  res:  { answer: string, confidence: number, citations: { document, section, page, excerpt }[] }
 
-POST /api/rag/documents    # multipart PDF upload → ingest (Reader → embed → index)
-GET  /api/rag/documents    # list ingested docs
-DELETE /api/rag/documents/:id
+GET /api/rag/status        # { configured, live, documents[], chunks, readerOk, embedOk, generation, store }
+GET /api/rag/documents     # { documents: RagDocument[], live }   (RagDocument = {id, document, section, page, content})
+POST /api/rag/ingest {}    # wipe + reseed the store, returns the status payload
 ```
 
 ### 21.6 Decisions
 
-- **JINA Reader** handles PDF extraction (robust against scanned/OCR and table-heavy docs), so the
-  pipeline avoids brittle local PDF parsing.
-- **JINA Embeddings** replace a from-scratch embedding model; vectors are 1024-dim and stored either in
-  `pgvector` (consistent with the live schema) or an in-memory FAISS index (simplest, no schema change).
-- **DeepSeek** is the generator (matches the previously-planned DeepSeek RAG stance); retrieval is
-  grounded so answers cite their source document + chunk.
-- Chunking: ~800 tokens with overlap, produced by the Reader output; metadata carries the source
-  filename and chunk index.
+- **PDF text extraction**: JINA Reader is tried first (fast, time-boxed) but can sit behind a
+  Cloudflare challenge from server environments, so **`pdf-parse` is the reliable fallback** and the
+  actual path used in production; `readerOk` reflects at least one PDF yielding text.
+- **Embeddings**: `jina-embeddings-v3` fixed to 1024-dim (`dimensions` flag) to match `vector(1024)`.
+- **Retrieval**: Postgres `<=>` cosine distance over normalized vectors — identical math to the
+  in-memory cosine path, so confidence is comparable across stores. Retrieval stops at the first
+  provider that returns rows; the in-memory index is always a fallback.
+- **Generation**: DeepSeek, `temperature 0.2`, `max_tokens 1500`; if the reasoning model returns an
+  empty `content`, `reasoning_content` is used, and a stale-but-accurate fallback keeps the answer
+  non-blank.
+- **Source grounding**: the system prompt forbids answering outside the provided SOURCES, and every
+  answer ends by citing the relevant document section(s).
+
+### 21.7 pgvector persistence (implemented)
+
+- Table `public.rag_chunks` (bigserial PK, `source_pdf`, `document`, `section`, `page`, `content`,
+  `embedding vector(1024)`, `created_at`) with **HNSW** index
+  `(embedding vector_cosine_ops)` and RLS (`SELECT` for anon, writes via service role).
+- **Auto-provisioned** idempotently at runtime (`CREATE EXTENSION IF NOT EXISTS vector`, table,
+  policy, index) through the app's lazy Supabase pool (`lib/rag-store.ts` `provision()`), so no manual
+  migration is required; the standalone DDL is `lib/db/sql/rag_chunks.sql` for manual application.
+- **Boot**: if the store has rows, the index is loaded from the DB (no PDF re-read, no re-embed —
+  verified: restart loads 27 chunks in ~0.0s); an empty store is seeded from the PDFs on first boot.
+- **Ingest**: `saveChunks` replaces the whole store in one transaction (drop + insert);
+  `POST /api/rag/ingest` clears the table before reseeding.
 
 ---
 
@@ -212,9 +250,18 @@ DELETE /api/rag/documents/:id
 - Round-trip contract: exported CSV/XLSX header `Fiscal Year, Category, Description, Allocated (HKD)`
   matches the importer's 4-column parse, and the importer skips a leading header line, so
   export → import is lossless.
+- **RAG live smoke** (real keys, Supabase):
+  - `/api/rag/status` → `configured: true, live: true, readerOk: true, embedOk: true, chunks: 27,
+    generation: deepseek, store: pgvector`.
+  - `/api/rag/chat` returns a grounded DeepSeek answer with 5 citations and confidence ≈ 0.70–0.76
+    (e.g. approval-level and dual-sign-off questions).
+  - **Restart persistence**: after wiping the store, boot 1 reseeded 27 chunks into `rag_chunks`;
+    boot 2 loaded them from pgvector in <1s and answered correctly without re-reading the PDFs.
+    DB confirmed: `vector` extension 0.8.2 + `rag_chunks` HNSW index present.
 
 ---
 
 *Generated from `docs/prompt_v4.md` — v5 adds the budget import/export feature (backend endpoints +
-importable export format, CSV/XLSX parsing + upsert, React toolbar + hook), locks the RAG chatbox design
-(JINA AI ingest/embeddings + DeepSeek generation over three PDFs), and updates the build state.*
+importable export format, CSV/XLSX parsing + upsert, React toolbar + hook), and fully implements the
+RAG chatbox (JINA AI embeddings + DeepSeek generation over three PDFs) with a persistent pgvector
+store on Supabase and an in-memory fallback, updating the build state and verification accordingly.*
