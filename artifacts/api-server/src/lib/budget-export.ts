@@ -1,7 +1,8 @@
 import ExcelJS from "exceljs";
+import PDFDocument from "pdfkit";
 import type { RuntimeBudgetRow } from "./db-runtime";
 
-export type BudgetExportFormat = "csv" | "xlsx";
+export type BudgetExportFormat = "csv" | "xlsx" | "pdf";
 
 export type BudgetExportResult = {
   filename: string;
@@ -50,11 +51,55 @@ async function buildXlsx(rows: RuntimeBudgetRow[]): Promise<Buffer> {
   return Buffer.from(data as ArrayBuffer);
 }
 
+
+function buildPdf(rows: RuntimeBudgetRow[]): Promise<Buffer> {
+  return new Promise<Buffer>((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 48 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.fontSize(18).text("Budget Lines", { underline: true });
+    doc.moveDown(0.4);
+    doc.fontSize(9).text(`Generated ${new Date().toISOString().slice(0, 10)}`);
+    doc.moveDown(0.6);
+    doc.fontSize(9);
+    const headers = ["Fiscal Year", "Category", "Description", "Allocated (HKD)"];
+    const colX = [48, 120, 200, 300];
+    const widths = colX.map((x, i) => (i < colX.length - 1 ? colX[i + 1] - x : 505 - x) - 4);
+    doc.font("Helvetica-Bold");
+    headers.forEach((h, i) => doc.text(h, colX[i], doc.y, { width: widths[i], lineBreak: false }));
+    doc.moveDown(0.3);
+    doc.font("Helvetica");
+    if (rows.length === 0) {
+      doc.text("No budget lines.");
+    } else {
+      for (const r of rows) {
+        doc.text(String(r.fiscalYear), colX[0], doc.y, { width: widths[0], lineBreak: false });
+        doc.text(String(r.category), colX[1], doc.y, { width: widths[1], lineBreak: false });
+        doc.text(r.description ?? "", colX[2], doc.y, { width: widths[2], lineBreak: false });
+        doc.text(Math.round(r.allocated).toLocaleString("en-HK"), colX[3], doc.y, { width: widths[3], lineBreak: false });
+        doc.moveDown(0.2);
+      }
+    }
+    doc.end();
+  });
+}
+
+
 export async function buildBudgetExport(
   rows: RuntimeBudgetRow[],
   format: BudgetExportFormat,
 ): Promise<BudgetExportResult> {
   const stamp = new Date().toISOString().slice(0, 10);
+  if (format === "pdf") {
+    return {
+      filename: `budget-lines-${stamp}.pdf`,
+      contentType: "application/pdf",
+      buffer: await buildPdf(rows),
+    };
+  }
   if (format === "xlsx") {
     return {
       filename: `budget-lines-${stamp}.xlsx`,

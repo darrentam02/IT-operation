@@ -350,7 +350,7 @@ router.get("/budget/summary", async (req, res) => {
 // ---------------------------------------------------------------------
 router.get("/budget/export", async (req, res) => {
   const formatRaw = String(req.query.format || "csv").toLowerCase();
-  const format = formatRaw === "xlsx" ? "xlsx" : "csv";
+  const format = formatRaw === "xlsx" || formatRaw === "pdf" ? formatRaw : "csv";
   const year = req.query.year != null ? Number(req.query.year) : undefined;
   try {
     const rows = await loadBudgetSummary(Number.isNaN(year) ? undefined : year);
