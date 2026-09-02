@@ -125,6 +125,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { ProcurementPage as ProcurementWorkflowPage } from '@/procurement-workflow';
 import { VendorPage } from '@/pages/VendorPage';
+import { VendorPortal } from '@/vendor-portal';
 import { CommandPalette, type PaletteAction } from '@/components/CommandPalette';
 import { DeputyToggle } from '@/components/DeputyToggle';
 
@@ -690,6 +691,10 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 }
 
 function Router() {
+  const [location] = useLocation();
+  if (location.startsWith('/vendor-portal')) {
+    return <RoutedErrorBoundary><Switch><Route path="/vendor-portal" component={VendorPortal} /></Switch></RoutedErrorBoundary>;
+  }
   return <Shell><RoutedErrorBoundary><Switch>
     <Route path="/" component={DashboardPage} />
     <Route path="/staff" component={StaffPage} />

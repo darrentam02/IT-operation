@@ -564,3 +564,714 @@ button:disabled { cursor: wait; opacity: .6; }
 .otp-wrap [data-input-otp] input { width: 100%; }
 .auth-back { background: transparent; border: 0; color: var(--ink-soft); font-size: 12px; margin-top: 4px; }
 .auth-back:hover { color: var(--ink); }
+/* VENDOR PORTAL - Deep Indigo & Cobalt Accent */
+.vendor-portal-theme {
+  --vp-bg: hsl(222 47% 7%);
+  --vp-surface: hsl(222 47% 11%);
+  --vp-surface-hover: hsl(222 47% 15%);
+  --vp-border: hsl(222 30% 18%);
+  --vp-text: hsl(214 32% 91%);
+  --vp-text-muted: hsl(214 20% 65%);
+  --vp-accent: hsl(199 89% 48%); /* Electric Blue */
+  --vp-accent-hover: hsl(199 89% 40%);
+  --vp-success: hsl(150 100% 33%);
+
+  background-color: var(--vp-bg);
+  color: var(--vp-text);
+  font-family: var(--app-font-sans);
+}
+
+.vendor-portal-theme .vp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 32px;
+  height: 64px;
+  background: var(--vp-surface);
+  border-bottom: 1px solid var(--vp-border);
+}
+
+.vendor-portal-theme .vp-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--vp-text);
+}
+
+.vendor-portal-theme .vp-brand-mark {
+  width: 27px; height: 27px; display: flex; gap: 3px; align-items: end; padding: 4px;
+  border: 1px solid hsl(199 89% 48% / 0.45);
+  background: hsl(199 89% 48% / 0.11);
+}
+.vendor-portal-theme .vp-brand-mark span { display: block; width: 4px; background: var(--vp-accent); }
+.vendor-portal-theme .vp-brand-mark span:nth-child(1) { height: 8px; opacity: .62; }
+.vendor-portal-theme .vp-brand-mark span:nth-child(2) { height: 14px; opacity: .8; }
+.vendor-portal-theme .vp-brand-mark span:nth-child(3) { height: 19px; }
+
+.vendor-portal-theme .vp-brand strong { font-size: 14px; letter-spacing: .2em; line-height: 1; display: block; }
+.vendor-portal-theme .vp-brand small { display: block; margin-top: 5px; color: var(--vp-accent); font: 9px var(--app-font-mono); letter-spacing: .13em; }
+
+.vendor-portal-theme .vp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.vendor-portal-theme .vp-vendor-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vp-accent);
+  background: hsl(199 89% 48% / 0.1);
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid hsl(199 89% 48% / 0.2);
+}
+
+.vendor-portal-theme .vp-logout-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vp-text-muted);
+  background: transparent;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+.vendor-portal-theme .vp-logout-button:hover {
+  background: var(--vp-surface-hover);
+  color: var(--vp-text);
+}
+
+.vendor-portal-theme .vp-login-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: radial-gradient(circle at center, var(--vp-surface), var(--vp-bg));
+}
+
+.vendor-portal-theme .vp-login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--vp-surface);
+  border: 1px solid var(--vp-border);
+  border-radius: 8px;
+  padding: 40px;
+  text-align: center;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+}
+
+.vendor-portal-theme .vp-login-icon {
+  width: 48px;
+  height: 48px;
+  background: hsl(199 89% 48% / 0.1);
+  color: var(--vp-accent);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 20px;
+}
+
+.vendor-portal-theme .vp-login-card h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  letter-spacing: -0.02em;
+}
+
+.vendor-portal-theme .vp-login-card p {
+  font-size: 13px;
+  color: var(--vp-text-muted);
+  margin-bottom: 32px;
+}
+
+.vendor-portal-theme .vp-error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: hsl(3 63% 51% / 0.1);
+  border: 1px solid hsl(3 63% 51% / 0.3);
+  color: hsl(3 63% 70%);
+  padding: 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: left;
+  margin-bottom: 24px;
+}
+
+.vendor-portal-theme .vp-login-form {
+  text-align: left;
+}
+
+.vendor-portal-theme .vp-input-group {
+  margin-bottom: 20px;
+}
+
+.vendor-portal-theme .vp-input,
+.vendor-portal-theme .vp-dialog-content .vp-input {
+  background: var(--vp-bg);
+  border: 1px solid var(--vp-border);
+  color: var(--vp-text);
+  border-radius: 4px;
+  font-family: var(--app-font-mono);
+  font-size: 13px;
+}
+
+.vendor-portal-theme .vp-input:focus {
+  border-color: var(--vp-accent);
+  box-shadow: 0 0 0 1px var(--vp-accent);
+}
+
+.vendor-portal-theme .vp-button-primary {
+  background: var(--vp-accent);
+  color: var(--vp-bg);
+  font-weight: 700;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s;
+}
+
+.vendor-portal-theme .vp-button-primary:hover:not(:disabled) {
+  background: var(--vp-accent-hover);
+  transform: translateY(-1px);
+}
+
+.vendor-portal-theme .vp-button-outline {
+  background: transparent;
+  color: var(--vp-text);
+  border: 1px solid var(--vp-border);
+  font-weight: 600;
+}
+.vendor-portal-theme .vp-button-outline:hover:not(:disabled) {
+  border-color: var(--vp-accent);
+  color: var(--vp-accent);
+}
+
+.vendor-portal-theme .vp-workspace-main {
+  flex: 1;
+  padding: 24px 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.vendor-portal-theme .vp-workspace-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+  height: 100%;
+  align-items: start;
+}
+
+.vendor-portal-theme .vp-sidebar {
+  background: var(--vp-surface);
+  border: 1px solid var(--vp-border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  position: sticky;
+  top: 88px;
+}
+
+.vendor-portal-theme .vp-sidebar-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--vp-border);
+}
+
+.vendor-portal-theme .vp-eyebrow {
+  display: block;
+  font: 10px var(--app-font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--vp-accent);
+  margin-bottom: 6px;
+}
+
+.vendor-portal-theme .vp-po-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.vendor-portal-theme .vp-po-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: transparent;
+  border: 1px solid var(--vp-border);
+  border-radius: 4px;
+  text-align: left;
+  color: var(--vp-text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.vendor-portal-theme .vp-po-item:hover {
+  border-color: hsl(222 30% 30%);
+  background: var(--vp-surface-hover);
+}
+
+.vendor-portal-theme .vp-po-item.active {
+  border-color: var(--vp-accent);
+  background: hsl(199 89% 48% / 0.05);
+}
+
+.vendor-portal-theme .vp-po-item-top,
+.vendor-portal-theme .vp-po-item-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.vendor-portal-theme .vp-po-item-top strong {
+  font-family: var(--app-font-mono);
+  font-size: 13px;
+}
+
+.vendor-portal-theme .vp-po-item-bottom span:first-child {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.vendor-portal-theme .vp-project-code {
+  font-size: 10px;
+  color: var(--vp-text-muted);
+  background: var(--vp-bg);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--app-font-mono);
+}
+
+.vendor-portal-theme .vp-status-pill {
+  font: 9px var(--app-font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 3px 6px;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.vendor-portal-theme .vp-status-po-issued {
+  background: hsl(199 89% 48% / 0.15);
+  color: var(--vp-accent);
+}
+.vendor-portal-theme .vp-status-paid {
+  background: hsl(150 100% 33% / 0.15);
+  color: var(--vp-success);
+}
+
+.vendor-portal-theme .vp-status-confirmed {
+  background: hsl(150 100% 33% / 0.14);
+  color: hsl(150 65% 62%);
+}
+.vendor-portal-theme .vp-status-invoiced {
+  background: hsl(33 100% 50% / 0.15);
+  color: hsl(33 100% 65%);
+}
+.vendor-portal-theme .vp-status-pending {
+  background: var(--vp-border);
+  color: var(--vp-text-muted);
+}
+
+.vendor-portal-theme .vp-content {
+  background: var(--vp-surface);
+  border: 1px solid var(--vp-border);
+  border-radius: 6px;
+  min-height: calc(100vh - 120px);
+}
+
+.vendor-portal-theme .vp-po-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.vendor-portal-theme .vp-po-header {
+  padding: 32px;
+  border-bottom: 1px solid var(--vp-border);
+  background: radial-gradient(ellipse at top right, hsl(199 89% 48% / 0.05), transparent 50%);
+}
+
+.vendor-portal-theme .vp-po-header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.vendor-portal-theme .vp-po-header h1 {
+  font-family: var(--app-font-mono);
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.vendor-portal-theme .vp-po-meta {
+  display: flex;
+  gap: 24px;
+  font-size: 12px;
+  color: var(--vp-text-muted);
+}
+.vendor-portal-theme .vp-po-meta strong {
+  color: var(--vp-text);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+.vendor-portal-theme .vp-po-amount-box {
+  text-align: right;
+}
+
+.vendor-portal-theme .vp-amount {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
+
+.vendor-portal-theme .vp-payment-terms {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--vp-text-muted);
+  background: var(--vp-bg);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--vp-border);
+}
+
+.vendor-portal-theme .vp-section {
+  padding: 32px;
+}
+
+.vendor-portal-theme .vp-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.vendor-portal-theme .vp-section-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.vendor-portal-theme .vp-badge {
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--vp-border);
+  padding: 4px 10px;
+  border-radius: 12px;
+  color: var(--vp-text-muted);
+}
+
+.vendor-portal-theme .vp-milestone-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.vendor-portal-theme .vp-milestone-card {
+  border: 1px solid var(--vp-border);
+  border-radius: 6px;
+  background: var(--vp-bg);
+  overflow: hidden;
+}
+
+.vendor-portal-theme .vp-milestone-info {
+  padding: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.vendor-portal-theme .vp-milestone-title {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.vendor-portal-theme .vp-milestone-index {
+  width: 24px;
+  height: 24px;
+  background: var(--vp-border);
+  color: var(--vp-text-muted);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--app-font-mono);
+}
+
+.vendor-portal-theme .vp-milestone-title strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.vendor-portal-theme .vp-milestone-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--vp-text-muted);
+}
+
+.vendor-portal-theme .vp-paid-date {
+  color: var(--vp-success);
+}
+
+.vendor-portal-theme .vp-milestone-amount {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.vendor-portal-theme .vp-milestone-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  background: var(--vp-surface);
+  border-top: 1px solid var(--vp-border);
+}
+
+.vendor-portal-theme .vp-action-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.vendor-portal-theme .vp-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px;
+  text-align: center;
+  color: var(--vp-text-muted);
+  height: 100%;
+}
+
+.vendor-portal-theme .vp-empty-state h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vp-text);
+  margin: 16px 0 8px;
+}
+
+.vendor-portal-theme .vp-empty-state p {
+  font-size: 13px;
+  max-width: 300px;
+}
+
+.vendor-portal-theme .vp-dialog-content {
+  background: var(--vp-surface);
+  border: 1px solid var(--vp-border);
+  color: var(--vp-text);
+}
+.vendor-portal-theme .vp-dialog-title {
+  color: var(--vp-text);
+}
+.vendor-portal-theme .vp-dialog-desc {
+  color: var(--vp-text-muted);
+}
+
+.vendor-portal-theme .vp-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vp-text-muted);
+}
+.vendor-portal-theme .vp-help-text {
+  font-size: 11px;
+  color: var(--vp-accent);
+  margin-top: 6px;
+}
+
+.vendor-portal-theme .vp-empty-mini {
+  padding: 24px;
+  text-align: center;
+  color: var(--vp-text-muted);
+  font-size: 12px;
+  background: var(--vp-bg);
+  border-radius: 4px;
+  border: 1px dashed var(--vp-border);
+}
+
+.vendor-portal-theme .vp-loading-state {
+  display: flex;
+  flex-direction: column;
+  padding: 32px;
+}
+.vendor-portal-theme .vp-loading-state .skeleton-row {
+  background: var(--vp-surface);
+  border-radius: 6px;
+  animation: vp-pulse 2s infinite ease-in-out;
+}
+@keyframes vp-pulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.vp-dialog-content.vendor-portal-theme {
+  --vp-bg: hsl(222 47% 7%);
+  --vp-surface: hsl(222 47% 11%);
+  --vp-surface-hover: hsl(222 47% 15%);
+  --vp-border: hsl(222 30% 18%);
+  --vp-text: hsl(214 32% 91%);
+  --vp-text-muted: hsl(214 20% 65%);
+  --vp-accent: hsl(199 89% 48%);
+  --vp-accent-hover: hsl(199 89% 40%);
+  --vp-success: hsl(150 100% 33%);
+
+  background: var(--vp-surface);
+  border: 1px solid var(--vp-border);
+  color: var(--vp-text);
+}
+.vp-dialog-content.vendor-portal-theme .vp-dialog-title { color: var(--vp-text); }
+.vp-dialog-content.vendor-portal-theme .vp-dialog-desc { color: var(--vp-text-muted); }
+.vp-dialog-content.vendor-portal-theme .vp-label { font-size: 12px; font-weight: 600; color: var(--vp-text-muted); }
+.vp-dialog-content.vendor-portal-theme .vp-help-text { font-size: 11px; color: var(--vp-accent); margin-top: 6px; }
+.vp-dialog-content.vendor-portal-theme .vp-input { background: var(--vp-bg); border: 1px solid var(--vp-border); color: var(--vp-text); border-radius: 4px; font-family: var(--app-font-mono); font-size: 13px; }
+.vp-dialog-content.vendor-portal-theme .vp-input:focus { border-color: var(--vp-accent); box-shadow: 0 0 0 1px var(--vp-accent); }
+.vp-dialog-content.vendor-portal-theme .vp-button-outline { background: transparent; color: var(--vp-text); border: 1px solid var(--vp-border); font-weight: 600; }
+.vp-dialog-content.vendor-portal-theme .vp-button-outline:hover { border-color: var(--vp-accent); color: var(--vp-accent); }
+.vp-dialog-content.vendor-portal-theme .vp-button-primary { background: var(--vp-accent); color: var(--vp-bg); font-weight: 700; border: none; }
+.vp-dialog-content.vendor-portal-theme .vp-button-primary:hover:not(:disabled) { background: var(--vp-accent-hover); }
+
+@media (max-width: 760px) {
+  .vendor-portal-theme {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .vendor-portal-theme .vp-header {
+    min-height: 64px;
+    height: auto;
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .vendor-portal-theme .vp-brand strong {
+    font-size: 12px;
+  }
+
+  .vendor-portal-theme .vp-brand small {
+    font-size: 8px;
+  }
+
+  .vendor-portal-theme .vp-header-actions {
+    gap: 6px;
+  }
+
+  .vendor-portal-theme .vp-vendor-badge {
+    max-width: 132px;
+    padding: 6px 8px;
+  }
+
+  .vendor-portal-theme .vp-vendor-badge span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .vendor-portal-theme .vp-logout-button span {
+    display: none;
+  }
+
+  .vendor-portal-theme .vp-workspace-main {
+    padding: 16px;
+    min-width: 0;
+  }
+
+  .vendor-portal-theme .vp-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .vendor-portal-theme .vp-sidebar {
+    position: static;
+    height: auto;
+    min-width: 0;
+  }
+
+  .vendor-portal-theme .vp-content {
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .vendor-portal-theme .vp-po-header,
+  .vendor-portal-theme .vp-section {
+    padding: 20px 16px;
+  }
+
+  .vendor-portal-theme .vp-po-header-main,
+  .vendor-portal-theme .vp-milestone-info,
+  .vendor-portal-theme .vp-milestone-actions {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .vendor-portal-theme .vp-po-meta {
+    flex-wrap: wrap;
+    gap: 8px 16px;
+  }
+
+  .vendor-portal-theme .vp-po-amount-box {
+    text-align: left;
+  }
+
+  .vendor-portal-theme .vp-amount {
+    font-size: 26px;
+  }
+
+  .vendor-portal-theme .vp-section-header {
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .vendor-portal-theme .vp-milestone-title {
+    min-width: 0;
+  }
+
+  .vendor-portal-theme .vp-milestone-title strong {
+    overflow-wrap: anywhere;
+  }
+
+  .vendor-portal-theme .vp-milestone-meta {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .vendor-portal-theme .vp-action-buttons {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .vendor-portal-theme .vp-action-buttons > button {
+    width: 100%;
+  }
+
+  .vendor-portal-theme .vp-login-card {
+    padding: 28px 20px;
+  }
+}

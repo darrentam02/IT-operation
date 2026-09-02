@@ -44,7 +44,10 @@ import type {
   StaffStatusUpdate,
   ThreeWayMatch,
   TreasuryAnalytics,
-  VarianceResolutionInput
+  VarianceResolutionInput,
+  VendorPortalInvoiceInput,
+  VendorPortalMilestoneConfirmationInput,
+  VendorPortalSession
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -1940,4 +1943,226 @@ export function useListAuditLogs<TData = Awaited<ReturnType<typeof listAuditLogs
 
 
 
+
+export const getGetVendorPortalSessionUrl = () => {
+
+
+
+
+  return `/api/vendor/portal/session`
+}
+
+/**
+ * Resolves the vendor from the X-Vendor-API-Key header and returns only that vendor's purchase orders and payment milestones.
+ * @summary Authenticate a vendor and list its purchase orders
+ */
+export const getVendorPortalSession = async ( options?: Parameters<typeof customFetch>[1]): Promise<VendorPortalSession> => {
+
+  return customFetch<VendorPortalSession>(getGetVendorPortalSessionUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetVendorPortalSessionQueryKey = () => {
+    return [
+    `/api/vendor/portal/session`
+    ] as const;
+    }
+
+
+export const getGetVendorPortalSessionQueryOptions = <TData = Awaited<ReturnType<typeof getVendorPortalSession>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getVendorPortalSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetVendorPortalSessionQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getVendorPortalSession>>> = ({ signal }) => getVendorPortalSession({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getVendorPortalSession>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetVendorPortalSessionQueryResult = NonNullable<Awaited<ReturnType<typeof getVendorPortalSession>>>
+export type GetVendorPortalSessionQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Authenticate a vendor and list its purchase orders
+ */
+
+export function useGetVendorPortalSession<TData = Awaited<ReturnType<typeof getVendorPortalSession>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getVendorPortalSession>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetVendorPortalSessionQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubmitVendorPortalInvoiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/vendor/portal/purchase-orders/${id}/invoices`
+}
+
+/**
+ * @summary Submit an invoice for a vendor purchase order
+ */
+export const submitVendorPortalInvoice = async (id: string,
+    vendorPortalInvoiceInput: VendorPortalInvoiceInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getSubmitVendorPortalInvoiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(vendorPortalInvoiceInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitVendorPortalInvoiceMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitVendorPortalInvoice>>, TError,{id: string;data: BodyType<VendorPortalInvoiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitVendorPortalInvoice>>, TError,{id: string;data: BodyType<VendorPortalInvoiceInput>}, TContext> => {
+
+const mutationKey = ['submitVendorPortalInvoice'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitVendorPortalInvoice>>, {id: string;data: BodyType<VendorPortalInvoiceInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  submitVendorPortalInvoice(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitVendorPortalInvoiceMutationResult = NonNullable<Awaited<ReturnType<typeof submitVendorPortalInvoice>>>
+    export type SubmitVendorPortalInvoiceMutationBody = BodyType<VendorPortalInvoiceInput>
+    export type SubmitVendorPortalInvoiceMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Submit an invoice for a vendor purchase order
+ */
+export const useSubmitVendorPortalInvoice = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitVendorPortalInvoice>>, TError,{id: string;data: BodyType<VendorPortalInvoiceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitVendorPortalInvoice>>,
+        TError,
+        {id: string;data: BodyType<VendorPortalInvoiceInput>},
+        TContext
+      > => {
+      return useMutation(getSubmitVendorPortalInvoiceMutationOptions(options));
+    }
+
+export const getConfirmVendorPortalMilestoneUrl = (id: string,) => {
+
+
+
+
+  return `/api/vendor/portal/milestones/${id}/confirm`
+}
+
+/**
+ * @summary Confirm a project milestone for a vendor purchase order
+ */
+export const confirmVendorPortalMilestone = async (id: string,
+    vendorPortalMilestoneConfirmationInput?: VendorPortalMilestoneConfirmationInput, options?: Parameters<typeof customFetch>[1]): Promise<PaymentSchedule> => {
+
+  return customFetch<PaymentSchedule>(getConfirmVendorPortalMilestoneUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(vendorPortalMilestoneConfirmationInput)
+  }
+);}
+
+
+
+
+
+export const getConfirmVendorPortalMilestoneMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmVendorPortalMilestone>>, TError,{id: string;data?: BodyType<VendorPortalMilestoneConfirmationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmVendorPortalMilestone>>, TError,{id: string;data?: BodyType<VendorPortalMilestoneConfirmationInput>}, TContext> => {
+
+const mutationKey = ['confirmVendorPortalMilestone'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmVendorPortalMilestone>>, {id: string;data?: BodyType<VendorPortalMilestoneConfirmationInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  confirmVendorPortalMilestone(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmVendorPortalMilestoneMutationResult = NonNullable<Awaited<ReturnType<typeof confirmVendorPortalMilestone>>>
+    export type ConfirmVendorPortalMilestoneMutationBody = BodyType<VendorPortalMilestoneConfirmationInput> | undefined
+    export type ConfirmVendorPortalMilestoneMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Confirm a project milestone for a vendor purchase order
+ */
+export const useConfirmVendorPortalMilestone = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmVendorPortalMilestone>>, TError,{id: string;data?: BodyType<VendorPortalMilestoneConfirmationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmVendorPortalMilestone>>,
+        TError,
+        {id: string;data?: BodyType<VendorPortalMilestoneConfirmationInput>},
+        TContext
+      > => {
+      return useMutation(getConfirmVendorPortalMilestoneMutationOptions(options));
+    }
 

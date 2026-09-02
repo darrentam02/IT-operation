@@ -539,6 +539,134 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AuditLog"
+  /vendor/portal/session:
+    get:
+      operationId: getVendorPortalSession
+      tags: [operations]
+      summary: Authenticate a vendor and list its purchase orders
+      description: Resolves the vendor from the X-Vendor-API-Key header and returns only that vendor's purchase orders and payment milestones.
+      parameters:
+        - name: X-Vendor-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Authenticated vendor workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorPortalSession"
+        "401":
+          description: Invalid or missing vendor API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /vendor/portal/purchase-orders/{id}/invoices:
+    post:
+      operationId: submitVendorPortalInvoice
+      tags: [operations]
+      summary: Submit an invoice for a vendor purchase order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Vendor-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VendorPortalInvoiceInput"
+      responses:
+        "200":
+          description: Updated invoice payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "400":
+          description: Invalid invoice details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid or missing vendor API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Purchase order is outside the vendor scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invoice cannot be submitted for this milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /vendor/portal/milestones/{id}/confirm:
+    patch:
+      operationId: confirmVendorPortalMilestone
+      tags: [operations]
+      summary: Confirm a project milestone for a vendor purchase order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Vendor-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VendorPortalMilestoneConfirmationInput"
+      responses:
+        "200":
+          description: Confirmed payment milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "401":
+          description: Invalid or missing vendor API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Milestone is outside the vendor scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Milestone cannot be confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   schemas:
     HealthStatus:
@@ -798,6 +926,62 @@ components:
         paidAmount: { type: number }
         paymentReference: { type: string }
         threeWayMatch: { type: string }
+        confirmationStatus: { type: string }
+        confirmationNote: { type: string }
+        confirmedAt: { type: string }
+    VendorPortalVendor:
+      type: object
+      required: [id, name, region, contact]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        region: { type: string }
+        contact: { type: string }
+    VendorPortalPurchaseOrder:
+      type: object
+      required: [id, prNumber, poNumber, vendor, region, amount, currency, hkdAmount, status, match, createdAt, projectCode, paymentTerms, expectedSettlementMonth, milestones]
+      properties:
+        id: { type: string }
+        prNumber: { type: string }
+        poNumber: { type: string }
+        vendor: { type: string }
+        region: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        hkdAmount: { type: number }
+        status: { type: string }
+        match: { type: string }
+        createdAt: { type: string }
+        projectCode: { type: string }
+        paymentTerms: { type: string }
+        expectedSettlementMonth: { type: string }
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentSchedule"
+    VendorPortalSession:
+      type: object
+      required: [vendor, purchaseOrders, demoMode]
+      properties:
+        vendor:
+          $ref: "#/components/schemas/VendorPortalVendor"
+        purchaseOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/VendorPortalPurchaseOrder"
+        demoMode: { type: boolean }
+    VendorPortalInvoiceInput:
+      type: object
+      required: [paymentScheduleId, invoiceAmount, invoiceNumber]
+      properties:
+        paymentScheduleId: { type: string }
+        invoiceAmount: { type: number, exclusiveMinimum: 0 }
+        invoiceDate: { type: string }
+        invoiceNumber: { type: string, minLength: 1 }
+    VendorPortalMilestoneConfirmationInput:
+      type: object
+      properties:
+        confirmationNote: { type: string, maxLength: 500 }
     ThreeWayMatch:
       type: object
       required: [id, procurementId, status]

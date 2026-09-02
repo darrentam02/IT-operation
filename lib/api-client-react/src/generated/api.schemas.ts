@@ -245,6 +245,54 @@ export interface PaymentSchedule {
   paidAmount?: number;
   paymentReference?: string;
   threeWayMatch?: string;
+  confirmationStatus?: string;
+  confirmationNote?: string;
+  confirmedAt?: string;
+}
+
+export interface VendorPortalVendor {
+  id: string;
+  name: string;
+  region: string;
+  contact: string;
+}
+
+export interface VendorPortalPurchaseOrder {
+  id: string;
+  prNumber: string;
+  poNumber: string;
+  vendor: string;
+  region: string;
+  amount: number;
+  currency: string;
+  hkdAmount: number;
+  status: string;
+  match: string;
+  createdAt: string;
+  projectCode: string;
+  paymentTerms: string;
+  expectedSettlementMonth: string;
+  milestones: PaymentSchedule[];
+}
+
+export interface VendorPortalSession {
+  vendor: VendorPortalVendor;
+  purchaseOrders: VendorPortalPurchaseOrder[];
+  demoMode: boolean;
+}
+
+export interface VendorPortalInvoiceInput {
+  paymentScheduleId: string;
+  /** @exclusiveMinimum 0 */
+  invoiceAmount: number;
+  invoiceDate?: string;
+  /** @minLength 1 */
+  invoiceNumber: string;
+}
+
+export interface VendorPortalMilestoneConfirmationInput {
+  /** @maxLength 500 */
+  confirmationNote?: string;
 }
 
 export type ThreeWayMatchStatus = typeof ThreeWayMatchStatus[keyof typeof ThreeWayMatchStatus];

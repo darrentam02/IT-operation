@@ -41,3 +41,8 @@ export * from './threeWayMatch';
 export * from './threeWayMatchStatus';
 export * from './treasuryAnalytics';
 export * from './varianceResolutionInput';
+export * from './vendorPortalInvoiceInput';
+export * from './vendorPortalMilestoneConfirmationInput';
+export * from './vendorPortalPurchaseOrder';
+export * from './vendorPortalSession';
+export * from './vendorPortalVendor';

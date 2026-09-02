@@ -710,6 +710,9 @@ export type RuntimePaymentSchedule = {
   paidAmount: number;
   paymentReference: string;
   threeWayMatch: string;
+  confirmationStatus: string;
+  confirmationNote: string;
+  confirmedAt: string;
 };
 
 const PAYMENT_SELECT = `
@@ -723,6 +726,9 @@ const PAYMENT_SELECT = `
          ps.variance_resolution_notes, ps.dual_signoff_at,
          to_char(ps.paid_at,'YYYY-MM-DD') AS paid_at,
          COALESCE(ps.paid_amount,0)::float8 AS paid_amount, ps.payment_reference,
+          CASE WHEN ps.vendor_confirmed_at IS NULL THEN 'PENDING' ELSE 'CONFIRMED' END AS confirmation_status,
+          ps.vendor_confirmation_note AS confirmation_note,
+          ps.vendor_confirmed_at AS confirmed_at,
          (SELECT status::text FROM three_way_matches tw
            WHERE tw.payment_schedule_id = ps.id ORDER BY tw.created_at DESC LIMIT 1) AS three_way_match
     FROM payment_schedules ps`;
@@ -746,6 +752,9 @@ const mapPayment = (row: Record<string, unknown>): RuntimePaymentSchedule => ({
   paidAmount: num(row.paid_amount),
   paymentReference: str(row.payment_reference),
   threeWayMatch: str(row.three_way_match),
+  confirmationStatus: str(row.confirmation_status) || "PENDING",
+  confirmationNote: str(row.confirmation_note),
+  confirmedAt: str(row.confirmed_at),
 });
 
 export async function listPaymentSchedules(
@@ -772,6 +781,140 @@ export async function getPaymentSchedule(
   try {
     const { rows } = await pool.query(`${PAYMENT_SELECT} WHERE ps.id = $1::uuid`, [id]);
     return rows.length ? mapPayment(rows[0]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export type RuntimeVendorPortalPurchaseOrder = RuntimeProcurementDetail & {
+  milestones: RuntimePaymentSchedule[];
+};
+
+export async function loadVendorPortalPurchaseOrders(
+  vendorId: string,
+): Promise<RuntimeVendorPortalPurchaseOrder[] | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `${PR_SELECT}
+        WHERE pr.vendor_id = $1::uuid
+          AND NULLIF(BTRIM(pr.po_number), '') IS NOT NULL
+          AND pr.status IN (
+            'PO_ISSUED',
+            'MILESTONE_RECEIVED',
+            'INVOICE_PENDING',
+            'VARIANCE_BLOCKED',
+            'PAYMENT_APPROVED',
+            'PAID'
+          )
+        ORDER BY pr.created_at DESC`,
+      [vendorId],
+    );
+    const records = rows.map(mapProcurementDetail);
+    return Promise.all(records.map(async (record) => {
+      const schedules = (await listPaymentSchedules(record.id)) ?? [];
+      return {
+        ...record,
+        milestones: schedules,
+      };
+    }));
+  } catch (error) {
+    throw new Error("Vendor portal database query failed", { cause: error });
+  }
+}
+
+export async function submitVendorInvoice(
+  id: string,
+  procurementId: string,
+  input: Record<string, unknown>,
+): Promise<RuntimePaymentSchedule | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE payment_schedules ps
+          SET invoice_amount = $3,
+              invoice_number = $4,
+              invoice_date = COALESCE($5::date, NOW()),
+              updated_at = NOW()
+         FROM procurement_records pr
+        WHERE ps.id = $1::uuid
+          AND ps.procurement_id = $2::uuid
+          AND pr.id = ps.procurement_id
+          AND NULLIF(BTRIM(pr.po_number), '') IS NOT NULL
+          AND pr.status IN (
+            'PO_ISSUED',
+            'MILESTONE_RECEIVED',
+            'INVOICE_PENDING',
+            'VARIANCE_BLOCKED',
+            'PAYMENT_APPROVED',
+            'PAID'
+          )
+          AND ps.invoice_number IS NULL
+          AND ps.paid_at IS NULL
+        RETURNING ps.id::text AS id`,
+      [
+        id,
+        procurementId,
+        num(input.invoiceAmount),
+        String(input.invoiceNumber),
+        input.invoiceDate ? String(input.invoiceDate) : null,
+      ],
+    );
+    return rows.length
+      ? getPaymentSchedule(str(rows[0].id))
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function confirmVendorMilestone(
+  id: string,
+  confirmationNote = "",
+): Promise<RuntimePaymentSchedule | null> {
+  const pool = await getPool();
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query(
+      `UPDATE payment_schedules
+          SET vendor_confirmed_at = NOW(),
+              vendor_confirmation_note = $2,
+              updated_at = NOW()
+        WHERE id = $1::uuid
+          AND is_milestone_payment = TRUE
+          AND vendor_confirmed_at IS NULL
+          AND EXISTS (
+            SELECT 1
+              FROM procurement_records pr
+             WHERE pr.id = payment_schedules.procurement_id
+               AND NULLIF(BTRIM(pr.po_number), '') IS NOT NULL
+               AND pr.status IN (
+                 'PO_ISSUED',
+                 'MILESTONE_RECEIVED',
+                 'INVOICE_PENDING',
+                 'VARIANCE_BLOCKED',
+                 'PAYMENT_APPROVED',
+                 'PAID'
+               )
+          )
+        RETURNING procurement_id::text AS procurement_id`,
+      [id, confirmationNote],
+    );
+    const procurementId = str(rows[0]?.procurement_id);
+    if (!procurementId) return null;
+    await pool.query(
+      `UPDATE procurement_records
+          SET status = CASE
+            WHEN status = 'PO_ISSUED' THEN 'MILESTONE_RECEIVED'
+            ELSE status
+          END,
+          updated_at = NOW()
+        WHERE id = $1::uuid`,
+      [procurementId],
+    );
+    return getPaymentSchedule(id);
   } catch {
     return null;
   }
