@@ -1,0 +1,1 @@
+- [Artifact deployment probes](artifact-deployment-probes.md) — API artifacts mounted below a path should return 200 at the mount root, even when a custom startup path is configured.
