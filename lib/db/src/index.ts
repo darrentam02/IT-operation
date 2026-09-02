@@ -4,9 +4,10 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
+const _dbUrl = process.env.SUPABASE_DATABASE_URL || process.env.DATABASE_URL;
+if (!_dbUrl) {
   throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+    "SUPABASE_DATABASE_URL or DATABASE_URL must be set. Did you forget to provision a database?",
   );
 }
 
@@ -15,7 +16,7 @@ if (!process.env.DATABASE_URL) {
 // at a plaintext local Postgres can opt out with DB_CONNECT_TLS=false.
 const tlsEnabled = process.env.DB_CONNECT_TLS !== "false";
 const poolOptions: pg.PoolConfig = {
-  connectionString: process.env.DATABASE_URL,
+  connectionString: _dbUrl,
   ...(tlsEnabled ? { ssl: { rejectUnauthorized: false } } : {}),
 };
 

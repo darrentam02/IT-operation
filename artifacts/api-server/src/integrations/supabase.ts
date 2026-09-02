@@ -12,7 +12,7 @@ export function getSupabaseConfig(): Partial<SupabaseConfig> {
     url: readEnv("SUPABASE_URL"),
     anonKey: readEnv("SUPABASE_ANON_KEY"),
     serviceRoleKey: readEnv("SUPABASE_SERVICE_ROLE_KEY"),
-    databaseUrl: readEnv("DATABASE_URL"),
+    databaseUrl: readEnv("SUPABASE_DATABASE_URL") || readEnv("DATABASE_URL"),
   };
 }
 

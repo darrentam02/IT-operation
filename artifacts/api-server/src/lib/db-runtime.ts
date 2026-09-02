@@ -18,7 +18,7 @@ type DbPool = {
 let poolPromise: Promise<DbPool | null> | null = null;
 
 function isDbConfigured(): boolean {
-  return Boolean(readEnv("DATABASE_URL"));
+  return Boolean(readEnv("SUPABASE_DATABASE_URL") || readEnv("DATABASE_URL"));
 }
 
 export async function getPool(): Promise<DbPool | null> {
