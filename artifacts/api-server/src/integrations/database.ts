@@ -23,13 +23,23 @@ export async function checkDatabaseHealth(): Promise<IntegrationStatus> {
         message: "pg pool failed to initialize",
       };
     }
-    const result = await mod.pool.query("SELECT 1 AS ok");
+    const result = await mod.pool.query(
+      `SELECT current_database() AS db,
+              current_user AS usr,
+              (SELECT count(*) FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='budget_lines') AS budget_lines,
+              (SELECT count(*) FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='payment_schedules') AS payment_schedules,
+              (SELECT count(*) FROM information_schema.tables
+                WHERE table_schema='public' AND table_name='procurement_records') AS procurement_records`,
+    );
+    const r0 = result.rows[0] ?? {};
     return {
       name: "database",
       configured: true,
       status: "ok",
       latencyMs: Date.now() - start,
-      message: `Postgres reachable (${String(result.rows[0]?.ok)})`,
+      message: `reachable db=${String(r0.db)} user=${String(r0.usr)} budget_lines=${String(r0.budget_lines)} payment_schedules=${String(r0.payment_schedules)} procurement_records=${String(r0.procurement_records)}`,
     };
   } catch (err) {
     return {
