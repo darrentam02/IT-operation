@@ -1,0 +1,1660 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: operations
+    description: IT operations dashboard data
+  - name: auth
+    description: Staff authentication and 2FA
+  - name: rag
+    description: DeepSeek RAG assistant and Storage-to-pgvector sync
+  - name: integrations
+    description: Third-party integration health and feeds
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [operations]
+      summary: Get dashboard overview
+      responses:
+        "200":
+          description: Dashboard overview metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /staff:
+    get:
+      operationId: listStaff
+      tags: [operations]
+      summary: List monitored staff
+      responses:
+        "200":
+          description: Staff shift board rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StaffMember"
+  /staff/sync-jira:
+    post:
+      operationId: syncStaffJira
+      tags: [operations]
+      summary: Sync staff shifts from Jira
+      description: Runs the server-side Jira shift synchronizer and returns the number of processed shifts.
+      responses:
+        "200":
+          description: Jira shift synchronization result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraSyncResult"
+        "503":
+          description: Jira synchronization is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /staff/{id}:
+    patch:
+      operationId: updateStaffStatus
+      tags: [operations]
+      summary: Update a staff member's status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StaffStatusUpdate"
+      responses:
+        "200":
+          description: Updated staff member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StaffMember"
+  /governance/delegation:
+    get:
+      operationId: getDelegationStatus
+      tags: [operations]
+      summary: Get the active Head of IT delegation
+      responses:
+        "200":
+          description: Current Head of IT and deputy authority
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DelegationStatus"
+  /governance/delegation/leave:
+    patch:
+      operationId: updateHeadOfItLeave
+      tags: [operations]
+      summary: Mark the Head of IT on or off leave
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HeadOfItLeaveUpdate"
+      responses:
+        "200":
+          description: Updated delegation authority
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DelegationStatus"
+        "409":
+          description: Leave status could not be changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /release-gates:
+    get:
+      operationId: listReleaseGates
+      tags: [operations]
+      summary: List environment release gates
+      responses:
+        "200":
+          description: Release gate checklist items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReleaseGate"
+  /release-gates/{id}/check:
+    patch:
+      operationId: toggleReleaseGate
+      tags: [operations]
+      summary: Check or uncheck a release gate item
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated release gate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseGate"
+  /procurement:
+    get:
+      operationId: listProcurementRecords
+      tags: [operations]
+      summary: List procurement workflow records
+      responses:
+        "200":
+          description: Procurement workflow records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProcurementRecord"
+    post:
+      operationId: createProcurementRecord
+      tags: [operations]
+      summary: Create a purchase requisition (PR)
+      description: Validates budget availability and auto-sets legal/security review flags (HKD > 100,000).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProcurementInput"
+      responses:
+        "201":
+          description: Created procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+        "409":
+          description: Budget pre-check failed or duplicate PR number
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Internal error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /procurement/{id}/approve:
+    patch:
+      operationId: approveProcurement
+      tags: [operations]
+      summary: Approve a procurement record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+  /procurement/{id}/status:
+    patch:
+      operationId: advanceProcurementStatus
+      tags: [operations]
+      summary: Advance PR/PO through tiered status transitions
+      description: Enforces tiered approval matrix (L1/L2/L3), legal/security review gating, and dual-control.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdvanceProcurementInput"
+      responses:
+        "200":
+          description: Updated procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+        "409":
+          description: Transition rejected (review gating / approval tier / variance)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /procurement/{id}/review:
+    patch:
+      operationId: submitProcurementReview
+      tags: [operations]
+      summary: Submit legal or security review decision
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionInput"
+      responses:
+        "200":
+          description: Updated procurement record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcurementRecord"
+        "409":
+          description: Review not required for this record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /procurement/{id}/payments:
+    get:
+      operationId: listPaymentSchedules
+      tags: [operations]
+      summary: List payment schedules for a procurement record
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Payment schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaymentSchedule"
+    post:
+      operationId: createPaymentSchedule
+      tags: [operations]
+      summary: Create a milestone / payment schedule entry
+      description: Standard 3:4:3 milestone structure; auto-triggers three-way match on invoice upload.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentInput"
+      responses:
+        "201":
+          description: Created payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: Milestones would exceed PO amount
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/invoice:
+    patch:
+      operationId: submitInvoice
+      tags: [operations]
+      summary: Submit vendor invoice or OCR data, triggering three-way match
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvoiceInput"
+      responses:
+        "200":
+          description: Payment schedule with three-way match result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+  /payments/{id}/three-way:
+    get:
+      operationId: getThreeWayMatch
+      tags: [operations]
+      summary: Get the three-way match result for a payment schedule
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Three-way match result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThreeWayMatch"
+        "404":
+          description: No three-way match found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/variance:
+    patch:
+      operationId: resolveVariance
+      tags: [operations]
+      summary: Resolve a blocked payment variance (finance + legal consultation)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VarianceResolutionInput"
+      responses:
+        "200":
+          description: Resolved payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: No variance to resolve or not authorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/signoff:
+    patch:
+      operationId: dualSignoff
+      tags: [operations]
+      summary: Apply dual sign-off (Head of IT + Finance Auditor) for payments > 250k
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignoffInput"
+      responses:
+        "200":
+          description: Signed-off payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: Dual sign-off not required or incomplete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /payments/{id}/pay:
+    patch:
+      operationId: markPaid
+      tags: [operations]
+      summary: Mark a payment schedule as paid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PaidInput"
+      responses:
+        "200":
+          description: Paid payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "409":
+          description: Payment not ready (needs sign-off / variance resolved)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /vendor/portal/session:
+    get:
+      operationId: getVendorPortalSession
+      tags: [operations]
+      summary: Authenticate a vendor and list its purchase orders
+      description: Resolves the vendor from the X-Vendor-API-Key header and returns only that vendor's purchase orders and payment milestones.
+      parameters:
+        - name: X-Vendor-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: Authenticated vendor workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorPortalSession"
+        "401":
+          description: Invalid or missing vendor API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /vendor/portal/purchase-orders/{id}/invoices:
+    post:
+      operationId: submitVendorPortalInvoice
+      tags: [operations]
+      summary: Submit an invoice for a vendor purchase order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Vendor-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VendorPortalInvoiceInput"
+      responses:
+        "200":
+          description: Updated invoice payment schedule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "400":
+          description: Invalid invoice details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Invalid or missing vendor API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Purchase order is outside the vendor scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Invoice cannot be submitted for this milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /vendor/portal/milestones/{id}/confirm:
+    patch:
+      operationId: confirmVendorPortalMilestone
+      tags: [operations]
+      summary: Confirm a project milestone for a vendor purchase order
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Vendor-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VendorPortalMilestoneConfirmationInput"
+      responses:
+        "200":
+          description: Confirmed payment milestone
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentSchedule"
+        "401":
+          description: Invalid or missing vendor API key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Milestone is outside the vendor scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Milestone cannot be confirmed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /budget/summary:
+    get:
+      operationId: getBudgetSummary
+      tags: [operations]
+      summary: Get budget rollup for a fiscal year
+      parameters:
+        - name: year
+          in: query
+          required: false
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Budget summary
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetSummaryRow"
+  /dlq:
+    get:
+      operationId: listDlqEntries
+      tags: [operations]
+      summary: List dead letter queue entries
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DLQ entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DlqEntry"
+  /dlq/{id}/reprocess:
+    patch:
+      operationId: reprocessDlqEntry
+      tags: [operations]
+      summary: Re-enqueue a DLQ entry for reprocessing
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated DLQ entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DlqEntry"
+  /dlq/{id}/discard:
+    patch:
+      operationId: discardDlqEntry
+      tags: [operations]
+      summary: Discard a DLQ entry (irrecoverable)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated DLQ entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DlqEntry"
+  /treasury:
+    get:
+      operationId: getTreasuryAnalytics
+      tags: [operations]
+      summary: Get treasury and cost allocation analytics
+      responses:
+        "200":
+          description: Treasury analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TreasuryAnalytics"
+  /audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [operations]
+      summary: List immutable audit log entries
+      responses:
+        "200":
+          description: Audit activity
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLog"
+  /auth/mode:
+    get:
+      operationId: getAuthMode
+      tags: [auth]
+      summary: Get the deployment auth mode
+      responses:
+        "200":
+          description: Auth mode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthMode"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Sign in with email and password (step 1 of 2FA)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Session (weak when TOTP is enrolled)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "400":
+          description: Missing credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /auth/user:
+    post:
+      operationId: getUser
+      tags: [auth]
+      summary: Load the current user for a token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "400":
+          description: Missing token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "401":
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+  /auth/totp/verify:
+    post:
+      operationId: verifyTotp
+      tags: [auth]
+      summary: Complete 2FA with a TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TotpVerifyInput"
+      responses:
+        "200":
+          description: Verified session tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpVerifyResponse"
+        "400":
+          description: Missing fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthError"
+        "401":
+          description: Invalid code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TotpVerifyResponse"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Sign out a session token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "200":
+          description: Sign-out result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResult"
+  /rag/documents:
+    get:
+      operationId: listRagDocuments
+      tags: [rag]
+      summary: List ingested SOP documents
+      responses:
+        "200":
+          description: Document list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagDocumentsResponse"
+  /rag/status:
+    get:
+      operationId: getRagStatus
+      tags: [rag]
+      summary: RAG ingest status
+      responses:
+        "200":
+          description: Ingest status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagIngestStatus"
+  /rag/ingest:
+    post:
+      operationId: reingest
+      tags: [rag]
+      summary: Re-run SOP ingestion
+      responses:
+        "200":
+          description: Ingest status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagIngestStatus"
+  /rag/search:
+    post:
+      operationId: searchRag
+      tags: [rag]
+      summary: Single-shot compliance search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagSearchInput"
+      responses:
+        "200":
+          description: RAG answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagAnswer"
+        "400":
+          description: Empty query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /rag/chat:
+    post:
+      operationId: chatRag
+      tags: [rag]
+      summary: RAG assistant chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RagChatInput"
+      responses:
+        "200":
+          description: RAG answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagAnswer"
+        "400":
+          description: Empty question
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /rag/storage/sync:
+    post:
+      operationId: syncRagStorage
+      tags: [rag]
+      summary: Run the Storage-to-pgvector sweep on demand
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StorageSyncResult"
+        "500":
+          description: Sync failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /health:
+    get:
+      operationId: getIntegrationsHealth
+      tags: [integrations]
+      summary: Health of all integrations plus the database
+      responses:
+        "200":
+          description: Integration statuses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntegrationsHealthResponse"
+  /jira/tickets:
+    get:
+      operationId: listJiraTickets
+      tags: [integrations]
+      summary: Upcoming/outstanding Jira tickets
+      responses:
+        "200":
+          description: Jira tickets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JiraTicketFeed"
+  /vendor/submissions:
+    get:
+      operationId: listVendorSubmissions
+      tags: [integrations]
+      summary: Vendor invoice/milestone submissions
+      responses:
+        "200":
+          description: Vendor submissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorSubmissionFeed"
+  /budget/import:
+    post:
+      operationId: importBudget
+      tags: [operations]
+      summary: Allocation-only upsert of client-parsed budget rows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetImportBody"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetImportSuccess"
+        "422":
+          description: Per-row validation errors
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BudgetImportError"
+        "503":
+          description: Budget service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Import failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    DashboardSummary:
+      type: object
+      required: [activeStaff, staleStaff, pendingApprovals, blockedVariances, releaseReadiness]
+      properties:
+        activeStaff: { type: number }
+        staleStaff: { type: number }
+        pendingApprovals: { type: number }
+        blockedVariances: { type: number }
+        releaseReadiness: { type: number }
+        systemPulse: { type: number }
+        lastSync: { type: string }
+    StaffMember:
+      type: object
+      required: [id, name, initials, role, team, region, status, ticket, environment, eta, updatedAt, isStale]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        initials: { type: string }
+        role: { type: string }
+        team: { type: string }
+        region: { type: string }
+        status: { type: string }
+        ticket: { type: string }
+        environment: { type: string }
+        eta: { type: string }
+        updatedAt: { type: string }
+        isStale: { type: boolean }
+        signal: { type: string }
+        source: { type: string }
+        priority: { type: string }
+        dueDate: { type: string }
+    StaffStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    ReleaseGate:
+      type: object
+      required: [id, environment, title, summary, owner, due, dueDate, checked, risk, priority]
+      properties:
+        id: { type: string }
+        environment: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        owner: { type: string }
+        due: { type: string }
+        dueDate: { type: string }
+        checked: { type: boolean }
+        risk: { type: string }
+        priority: { type: string }
+    ProcurementRecord:
+      type: object
+      required: [id, prNumber, poNumber, vendor, region, amount, currency, hkdAmount, status, match, createdAt]
+      properties:
+        id: { type: string }
+        prNumber: { type: string }
+        poNumber: { type: string }
+        vendor: { type: string }
+        region: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        hkdAmount: { type: number }
+        status: { type: string }
+        match: { type: string }
+        createdAt: { type: string }
+    VendorPortalVendor:
+      type: object
+      required: [id, name, region, contact]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        region: { type: string }
+        contact: { type: string }
+    VendorPortalPurchaseOrder:
+      type: object
+      required: [id, prNumber, poNumber, vendor, region, amount, currency, hkdAmount, status, match, createdAt, projectCode, paymentTerms, expectedSettlementMonth, milestones]
+      properties:
+        id: { type: string }
+        prNumber: { type: string }
+        poNumber: { type: string }
+        vendor: { type: string }
+        region: { type: string }
+        amount: { type: number }
+        currency: { type: string }
+        hkdAmount: { type: number }
+        status: { type: string }
+        match: { type: string }
+        createdAt: { type: string }
+        projectCode: { type: string }
+        paymentTerms: { type: string }
+        expectedSettlementMonth: { type: string }
+        milestones:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaymentSchedule"
+    VendorPortalSession:
+      type: object
+      required: [vendor, purchaseOrders, demoMode]
+      properties:
+        vendor:
+          $ref: "#/components/schemas/VendorPortalVendor"
+        purchaseOrders:
+          type: array
+          items:
+            $ref: "#/components/schemas/VendorPortalPurchaseOrder"
+        demoMode: { type: boolean }
+    VendorPortalInvoiceInput:
+      type: object
+      required: [paymentScheduleId, invoiceAmount, invoiceNumber]
+      properties:
+        paymentScheduleId: { type: string }
+        invoiceAmount: { type: number, exclusiveMinimum: 0 }
+        invoiceDate: { type: string }
+        invoiceNumber: { type: string, minLength: 1 }
+    VendorPortalMilestoneConfirmationInput:
+      type: object
+      properties:
+        confirmationNote: { type: string, maxLength: 500 }
+    TreasuryAnalytics:
+      type: object
+      required: [monthlyPayments, businessUnits, fxRates, totalYtd, varianceRate]
+      properties:
+        monthlyPayments:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyPayment"
+        businessUnits:
+          type: array
+          items:
+            $ref: "#/components/schemas/BusinessUnitAllocation"
+        fxRates:
+          type: array
+          items:
+            $ref: "#/components/schemas/FxRate"
+        totalYtd: { type: number }
+        varianceRate: { type: number }
+    MonthlyPayment:
+      type: object
+      required: [month, paid, committed]
+      properties:
+        month: { type: string }
+        paid: { type: number }
+        committed: { type: number }
+    BusinessUnitAllocation:
+      type: object
+      required: [name, value, color]
+      properties:
+        name: { type: string }
+        value: { type: number }
+        color: { type: string }
+    FxRate:
+      type: object
+      required: [currency, rate, delta]
+      properties:
+        currency: { type: string }
+        rate: { type: number }
+        delta: { type: number }
+    AuditLog:
+      type: object
+      required: [id, actor, action, target, timestamp, region, actedAsDeputy]
+      properties:
+        id: { type: string }
+        actor: { type: string }
+        action: { type: string }
+        target: { type: string }
+        timestamp: { type: string }
+        region: { type: string }
+        actedAsDeputy: { type: boolean }
+        deputy:
+          type: boolean
+          description: Legacy alias for actedAsDeputy
+    GovernancePerson:
+      type: object
+      required: [id, name, role, region, onLeave]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        role: { type: string }
+        region: { type: string }
+        onLeave: { type: boolean }
+    DelegationStatus:
+      type: object
+      required: [headOfIt, deputy, delegationActive, authorityLabel]
+      properties:
+        headOfIt:
+          $ref: "#/components/schemas/GovernancePerson"
+        deputy:
+          anyOf:
+            - $ref: "#/components/schemas/GovernancePerson"
+            - type: "null"
+        delegationActive: { type: boolean }
+        authorityLabel: { type: string }
+    HeadOfItLeaveUpdate:
+      type: object
+      required: [onLeave]
+      properties:
+        onLeave: { type: boolean }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+        code: { type: string }
+        category:
+          type: string
+          enum: [CONFIGURATION, JIRA, SUPABASE, UNKNOWN]
+    JiraSyncResult:
+      type: object
+      required: [count]
+      properties:
+        count: { type: number, minimum: 0 }
+    CreateProcurementInput:
+      type: object
+      required:
+        - vendorId
+        - budgetLineId
+        - region
+        - localCurrency
+        - localAmount
+        - hkdAmount
+        - fxRate
+        - projectCode
+      properties:
+        vendorId: { type: string }
+        budgetLineId: { type: string }
+        region:
+          type: string
+          enum: [HK, CN, MY, ID]
+        localCurrency: { type: string }
+        localAmount: { type: number }
+        hkdAmount: { type: number }
+        fxRate: { type: number }
+        projectCode: { type: string }
+        paymentTerms: { type: string }
+        expectedSettlementAmount: { type: number }
+        expectedSettlementMonth: { type: string }
+        terms: { type: string }
+        deliveryAddress: { type: string }
+        taxId: { type: string }
+        createdBy: { type: string }
+        level1Approver: { type: string }
+        level2Approver: { type: string }
+        level3Approver: { type: string }
+    AdvanceProcurementInput:
+      type: object
+      required: [toStatus, actorId]
+      properties:
+        toStatus:
+          type: string
+          enum: [PR_APPROVED, PO_ISSUED, MILESTONE_RECEIVED, INVOICE_PENDING, PAYMENT_APPROVED, PAID]
+        actorId: { type: string }
+        note: { type: string }
+    ReviewDecisionInput:
+      type: object
+      required: [reviewType, decision, reviewerId]
+      properties:
+        reviewType:
+          type: string
+          enum: [legal, security]
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+        reviewerId: { type: string }
+    CreatePaymentInput:
+      type: object
+      required: [dueDate, amount, isMilestonePayment]
+      properties:
+        dueDate: { type: string }
+        amount: { type: number }
+        isMilestonePayment: { type: boolean }
+        milestoneNumber: { type: number }
+        milestoneDescription: { type: string }
+    InvoiceInput:
+      type: object
+      required: [invoiceAmount, invoiceNumber]
+      properties:
+        invoiceAmount: { type: number }
+        invoiceDate: { type: string }
+        invoiceNumber: { type: string }
+        ocrInvoiceData:
+          type: object
+          additionalProperties: true
+    VarianceResolutionInput:
+      type: object
+      required: [resolvedBy, resolutionNotes]
+      properties:
+        resolvedBy: { type: string }
+        resolutionNotes: { type: string }
+        requireLegalConsultation: { type: boolean }
+    SignoffInput:
+      type: object
+      required: [headId, financeId]
+      properties:
+        headId: { type: string }
+        financeId: { type: string }
+    PaidInput:
+      type: object
+      required: [paidAmount, paymentReference, paidBy]
+      properties:
+        paidAmount: { type: number }
+        paymentReference: { type: string }
+        paidBy: { type: string }
+    PaymentSchedule:
+      type: object
+      required: [id, procurementId, dueDate, amount, isMilestonePayment, isVarianceDetected]
+      properties:
+        id: { type: string }
+        procurementId: { type: string }
+        dueDate: { type: string }
+        amount: { type: number }
+        isMilestonePayment: { type: boolean }
+        milestoneNumber: { type: number }
+        milestoneDescription: { type: string }
+        invoiceAmount: { type: number }
+        invoiceNumber: { type: string }
+        isVarianceDetected: { type: boolean }
+        varianceType: { type: string }
+        varianceAmount: { type: number }
+        varianceResolutionNotes: { type: string }
+        dualSignoffAt: { type: string }
+        paidAt: { type: string }
+        paidAmount: { type: number }
+        paymentReference: { type: string }
+        threeWayMatch: { type: string }
+        confirmationStatus: { type: string }
+        confirmationNote: { type: string }
+        confirmedAt: { type: string }
+    ThreeWayMatch:
+      type: object
+      required: [id, procurementId, status]
+      properties:
+        id: { type: string }
+        procurementId: { type: string }
+        paymentScheduleId: { type: string }
+        poAmount: { type: number }
+        invoiceAmount: { type: number }
+        milestoneAmount: { type: number }
+        priceVariance: { type: number }
+        shippingTaxVariance: { type: number }
+        status:
+          type: string
+          enum: [PENDING, MATCHED, PRICE_VARIANCE, SHIPPING_TAX_VARIANCE, BLOCKED]
+        matchedAt: { type: string }
+        notes: { type: string }
+    BudgetSummaryRow:
+      type: object
+      required: [fiscalYear, category, allocated, incurred, paid, remaining]
+      properties:
+        fiscalYear: { type: number }
+        category: { type: string }
+        allocated: { type: number }
+        incurred: { type: number }
+        paid: { type: number }
+        remaining: { type: number }
+    DlqEntry:
+      type: object
+      required: [id, status, retryCount, maxRetries]
+      properties:
+        id: { type: string }
+        status: { type: string }
+        errorCode: { type: string }
+        errorMessage: { type: string }
+        retryCount: { type: number }
+        maxRetries: { type: number }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+    AuthMode:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [demo, full]
+    AuthUser:
+      type: object
+      required: [id]
+      properties:
+        id: { type: string }
+        email: { type: string }
+        app_metadata: { type: object, additionalProperties: true }
+        user_metadata: { type: object, additionalProperties: true }
+    AuthFactor:
+      type: object
+      required: [id, factor_type, status]
+      properties:
+        id: { type: string }
+        factor_type: { type: string }
+        status: { type: string }
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string }
+        password: { type: string }
+    LoginResult:
+      type: object
+      required: [ok, weak_session, factors]
+      properties:
+        ok: { type: boolean }
+        access_token: { type: string }
+        refresh_token: { type: string }
+        user:
+          $ref: "#/components/schemas/AuthUser"
+        weak_session: { type: boolean }
+        factors:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthFactor"
+        message: { type: string }
+    UserInput:
+      type: object
+      required: [access_token]
+      properties:
+        access_token: { type: string }
+    UserResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        user:
+          $ref: "#/components/schemas/AuthUser"
+        message: { type: string }
+    TotpVerifyInput:
+      type: object
+      required: [factor_id, code, access_token]
+      properties:
+        factor_id: { type: string }
+        code: { type: string }
+        access_token: { type: string }
+    TotpVerifyResponse:
+      type: object
+      required: [ok, message]
+      properties:
+        ok: { type: boolean }
+        challengeId: { type: string }
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        message: { type: string }
+    AuthResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+    AuthError:
+      type: object
+      required: [ok, message]
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+    Citation:
+      type: object
+      required: [document, section, page, excerpt]
+      properties:
+        document: { type: string }
+        section: { type: string }
+        page: { type: number }
+        excerpt: { type: string }
+    RagAnswer:
+      type: object
+      required: [answer, confidence, citations]
+      properties:
+        answer: { type: string }
+        confidence: { type: number }
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+    RagChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content: { type: string }
+    RagDocument:
+      type: object
+      required: [id, document, section, page, content]
+      properties:
+        id: { type: string }
+        document: { type: string }
+        section: { type: string }
+        page: { type: number }
+        content: { type: string }
+    RagDocumentsResponse:
+      type: object
+      required: [documents, live]
+      properties:
+        documents:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagDocument"
+        live: { type: boolean }
+    RagIngestStatus:
+      type: object
+      required: [configured, live, documents, chunks, readerOk, embedOk, store]
+      properties:
+        configured: { type: boolean }
+        live: { type: boolean }
+        documents:
+          type: array
+          items: { type: string }
+        chunks: { type: number }
+        readerOk: { type: boolean }
+        embedOk: { type: boolean }
+        generation:
+          type: [string, "null"]
+        store:
+          type: string
+          enum: [pgvector, memory]
+    RagSearchInput:
+      type: object
+      required: [query]
+      properties:
+        query: { type: string }
+    RagChatInput:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string }
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/RagChatMessage"
+    StorageSyncResult:
+      type: object
+      required: [scanned, indexed, updated, removed, errors]
+      properties:
+        scanned: { type: number }
+        indexed: { type: number }
+        updated: { type: number }
+        removed: { type: number }
+        errors:
+          type: array
+          items: { type: string }
+    IntegrationStatus:
+      type: object
+      required: [name, configured, status]
+      properties:
+        name: { type: string }
+        configured: { type: boolean }
+        status:
+          type: string
+          enum: [ok, error, not_configured]
+        latencyMs: { type: number }
+        message: { type: string }
+    IntegrationsHealthResponse:
+      type: object
+      required: [integrations]
+      properties:
+        integrations:
+          type: array
+          items:
+            $ref: "#/components/schemas/IntegrationStatus"
+    JiraTicket:
+      type: object
+      required: [id, key, summary, status, assignee, environment, updatedAt]
+      properties:
+        id: { type: string }
+        key: { type: string }
+        summary: { type: string }
+        status: { type: string }
+        assignee: { type: string }
+        environment:
+          type: string
+          enum: [SIT, UAT, STAGING, PROD]
+        updatedAt: { type: string }
+    JiraTicketFeed:
+      type: object
+      required: [tickets, source]
+      properties:
+        tickets:
+          type: array
+          items:
+            $ref: "#/components/schemas/JiraTicket"
+        source: { type: string }
+        degraded: { type: boolean }
+        message: { type: string }
+    VendorSubmission:
+      type: object
+      required: [vendorId, type, poNumber, amount, submittedAt]
+      properties:
+        vendorId: { type: string }
+        type:
+          type: string
+          enum: [invoice, delivery, milestone, po_acceptance]
+        poNumber: { type: string }
+        amount: { type: number }
+        submittedAt: { type: string }
+    VendorSubmissionFeed:
+      type: object
+      required: [submissions, source]
+      properties:
+        submissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/VendorSubmission"
+        source:
+          type: string
+          enum: [vendor-api, representative]
+        degraded: { type: boolean }
+        message: { type: string }
+    BudgetImportRow:
+      type: object
+      required: [fiscalYear, category, allocated]
+      properties:
+        fiscalYear: { type: number }
+        category: { type: string }
+        allocated: { type: number }
+        incurred: { type: number }
+    BudgetImportBody:
+      type: object
+      required: [rows]
+      properties:
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/BudgetImportRow"
+    BudgetImportSuccess:
+      type: object
+      required: [imported, updated, years]
+      properties:
+        imported: { type: number }
+        updated: { type: number }
+        years:
+          type: array
+          items: { type: number }
+    BudgetImportErrorItem:
+      type: object
+      required: [row, field, message]
+      properties:
+        row: { type: number }
+        field: { type: string }
+        message: { type: string }
+    BudgetImportError:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetImportErrorItem"

@@ -1,0 +1,39 @@
+kind = "web"
+previewPath = "/"
+title = "IT Operations Control Tower"
+description = "An enterprise IT operations dashboard for monitoring staff shifts, release readiness, procurement approvals, treasury allocation, compliance guidance, and audit activity across regional business units."
+version = "1.0.0"
+id = "artifacts/it-operations-control-tower"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21727
+
+[services.development]
+run = "pnpm --filter @workspace/it-operations-control-tower run dev"
+
+[services.production]
+
+[services.production.build]
+args = ["npm", "run", "build:production"]
+
+[services.production.build.env]
+NODE_ENV = "production"
+PORT = "21727"
+BASE_PATH = "/"
+
+[services.production.run]
+args = ["npm", "run", "start"]
+
+[services.production.run.env]
+PORT = "21727"
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/api/healthz"
+
+[services.env]
+PORT = "21727"
+BASE_PATH = "/"
