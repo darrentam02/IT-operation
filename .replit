@@ -1,5 +1,12 @@
 modules = ["nodejs-20", "web", "postgresql-16"]
 
+[run]
+command = ["sh", "-lc", "pnpm run build:production && pnpm start"]
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
 [deployment]
 router = "application"
 deploymentTarget = "autoscale"
