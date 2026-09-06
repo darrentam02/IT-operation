@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "build": "pnpm run typecheck && pnpm run build:production",
     "build:production": "PORT=21727 BASE_PATH=/ pnpm --filter @workspace/it-operations-control-tower run build && pnpm --filter @workspace/api-server run build",
     "start": "node --enable-source-maps artifacts/api-server/dist/index.mjs",
     "test": "vitest run",
