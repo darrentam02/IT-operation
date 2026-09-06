@@ -5,9 +5,6 @@ run = "pnpm run build:production && pnpm start"
 localPort = 8080
 externalPort = 80
 
-[[ports]]
-localPort = 21727
-externalPort = 3000
 
 [deployment]
 deploymentTarget = "autoscale"
