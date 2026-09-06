@@ -8,8 +8,6 @@ externalPort = 80
 
 [deployment]
 deploymentTarget = "autoscale"
-# Single runnable: the api-server serves both the SPA and /api in production.
-# Prevents Replit monorepo routing from splitting /api to a phantom artifact.
 build = ["pnpm", "run", "build:production"]
 run = ["pnpm", "run", "start"]
 
