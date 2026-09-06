@@ -51,8 +51,28 @@ async function getJSON<T>(path: string): Promise<T> {
 function getHealth() {
   return getJSON<HealthResponse>('/api/health');
 }
-function getJiraTickets() {
-  return getJSON<JiraResponse>('/api/jira/tickets');
+async function getJiraTickets(): Promise<JiraResponse> {
+  const response = await getJSON<IntegrationFeed & { tickets?: unknown }>('/api/jira/tickets');
+  const nestedFeed =
+    response.tickets && !Array.isArray(response.tickets) && typeof response.tickets === 'object'
+      ? (response.tickets as Partial<JiraResponse>)
+      : undefined;
+  const tickets = Array.isArray(response.tickets)
+    ? response.tickets
+    : Array.isArray(nestedFeed?.tickets)
+      ? nestedFeed.tickets
+      : undefined;
+
+  if (!tickets) {
+    throw new Error('Invalid Jira ticket response: tickets must be an array');
+  }
+
+  return {
+    tickets,
+    source: nestedFeed?.source ?? response.source,
+    degraded: nestedFeed?.degraded ?? response.degraded,
+    message: nestedFeed?.message ?? response.message,
+  };
 }
 function getVendorSubmissions() {
   return getJSON<VendorResponse>('/api/vendor/submissions');

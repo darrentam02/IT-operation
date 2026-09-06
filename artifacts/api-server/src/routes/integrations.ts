@@ -79,7 +79,7 @@ router.get("/jira/tickets", async (_req, res) => {
     res.json({ tickets: liveTickets, source: "Jira · next 30 days" });
     return;
   }
-  res.json({ tickets: await listJiraTickets(), source: "representative" });
+  res.json(await listJiraTickets());
 });
 
 // /api/vendor/submissions — vendor invoices/milestones via the vendor API
