@@ -1,31 +1,20 @@
 modules = ["nodejs-22", "web", "postgresql-16"]
-
-[run]
-command = ["sh", "-lc", "pnpm run build:production && pnpm start"]
+run = "pnpm run build:production && pnpm start"
 
 [[ports]]
 localPort = 8080
 externalPort = 80
 
 [deployment]
-router = "application"
 deploymentTarget = "autoscale"
 # Single runnable: the api-server serves both the SPA and /api in production.
 # Prevents Replit monorepo routing from splitting /api to a phantom artifact.
 build = ["pnpm", "run", "build:production"]
 run = ["pnpm", "run", "start"]
 
-[deployment.postBuild]
-args = ["pnpm", "store", "prune"]
-env = { "CI" = "true" }
-
-[agent]
-stack = "PNPM_WORKSPACE"
-expertMode = true
+[nix]
+channel = "stable-25_05"
 
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
-
-[nix]
-channel = "stable-25_05"
