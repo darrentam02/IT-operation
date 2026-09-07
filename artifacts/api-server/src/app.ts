@@ -32,6 +32,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+app.use("/svc", router); // Replit deployment proxy reserves /api at the edge; /svc is the public API prefix
 
 if (process.env.NODE_ENV === "production") {
   const publicDir = resolve(dirname(fileURLToPath(import.meta.url)), "public");
@@ -39,7 +40,7 @@ if (process.env.NODE_ENV === "production") {
 
   app.use(express.static(publicDir, { index: false }));
   app.use((req, res, next) => {
-    if (!["GET", "HEAD"].includes(req.method) || req.path.startsWith("/api")) {
+    if (!["GET", "HEAD"].includes(req.method) || req.path.startsWith("/api") || req.path.startsWith("/svc")) {
       next();
       return;
     }

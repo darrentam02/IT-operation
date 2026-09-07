@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 /*
  * RAG assistant client for the integration endpoints added on the api-server
- * (/api/rag/chat, /api/rag/status, /api/rag/documents, /api/rag/ingest).
+ * (/svc/rag/chat, /svc/rag/status, /svc/rag/documents, /svc/rag/ingest).
  * These sit outside the generated @workspace/api-client-react surface, so we
  * fetch the relative /api paths directly (Vite proxies them to the api-server).
  */
@@ -64,10 +64,10 @@ async function getJSON<T>(path: string): Promise<T> {
 }
 
 function getRagStatus() {
-  return getJSON<RagIngestStatus>('/api/rag/status');
+  return getJSON<RagIngestStatus>('/svc/rag/status');
 }
 function getRagDocuments() {
-  return getJSON<DocumentsResponse>('/api/rag/documents');
+  return getJSON<DocumentsResponse>('/svc/rag/documents');
 }
 
 export const ragStatusKey = ['rag', 'status'] as const;
@@ -93,7 +93,7 @@ export function useRagChat() {
   const client = useQueryClient();
   return useMutation({
     mutationFn: (input: { question: string; history?: RagChatMessage[] }) =>
-      postJSON<ChatResponse>('/api/rag/chat', {
+      postJSON<ChatResponse>('/svc/rag/chat', {
         question: input.question,
         history: input.history ?? [],
       }),
@@ -106,7 +106,7 @@ export function useRagChat() {
 export function useRagIngest() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () => postJSON<RagIngestStatus>('/api/rag/ingest', {}),
+    mutationFn: () => postJSON<RagIngestStatus>('/svc/rag/ingest', {}),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['rag', 'status'] });
       void client.invalidateQueries({ queryKey: ['rag', 'documents'] });

@@ -58,7 +58,7 @@ const STORAGE_KEY = 'orbital.auth.session';
 
 export type AuthMode = 'full' | 'demo';
 
-// AUTH_MODE=demo (backend `GET /api/auth/mode`) bypasses the 2FA gate for
+// AUTH_MODE=demo (backend `GET /svc/auth/mode`) bypasses the 2FA gate for
 // prototyping/UI demos. This session only marks the app as "signed in" client-side.
 const DEMO_SESSION: AuthSession = {
   access_token: 'demo',
@@ -119,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       let mode: AuthMode = 'full';
       try {
-        const m = await getJSON<{ mode?: AuthMode }>('/api/auth/mode');
+        const m = await getJSON<{ mode?: AuthMode }>('/svc/auth/mode');
         if (m.mode === 'demo') mode = 'demo';
       } catch {
         // API unreachable; fall back to full auth and let validation surface it.
@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       try {
         const stored = JSON.parse(raw) as AuthSession;
-        const res = await postJSON<UserResponse>('/api/auth/user', {
+        const res = await postJSON<UserResponse>('/svc/auth/user', {
           access_token: stored.access_token,
         });
         if (cancelled) return;
@@ -183,7 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setStatus('signedIn');
         return;
       }
-      const res = await postJSON<LoginResponse>('/api/auth/login', {
+      const res = await postJSON<LoginResponse>('/svc/auth/login', {
         email: em,
         password,
       });
@@ -241,7 +241,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     setError(null);
     try {
-      const res = await postJSON<VerifyResponse>('/api/auth/totp/verify', {
+      const res = await postJSON<VerifyResponse>('/svc/auth/totp/verify', {
         factor_id: factor.id,
         code,
         access_token: pending.accessToken,
@@ -250,7 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(res.message ?? 'Code invalid');
       }
       const token = res.accessToken ?? pending.accessToken;
-      const userRes = await postJSON<UserResponse>('/api/auth/user', {
+      const userRes = await postJSON<UserResponse>('/svc/auth/user', {
         access_token: token,
       });
       const sess: AuthSession = {
@@ -279,7 +279,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     try {
       if (token) {
-        await postJSON<{ ok: boolean }>('/api/auth/logout', {
+        await postJSON<{ ok: boolean }>('/svc/auth/logout', {
           access_token: token,
         }).catch(() => null);
       }

@@ -56,7 +56,7 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
 export function useBudgetSummary(year?: number) {
   return useQuery({
     queryKey: ['budget', 'summary', year ?? null],
-    queryFn: () => getJSON<BudgetRow[]>(`/api/budget/summary${year != null ? `?year=${year}` : ''}`),
+    queryFn: () => getJSON<BudgetRow[]>(`/svc/budget/summary${year != null ? `?year=${year}` : ''}`),
     staleTime: 30000,
   });
 }
@@ -64,7 +64,7 @@ export function useBudgetSummary(year?: number) {
 export function useBudgetImport() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: (rows: BudgetImportInput[]) => postJSON<BudgetImportResult>('/api/budget/import', { rows }),
+    mutationFn: (rows: BudgetImportInput[]) => postJSON<BudgetImportResult>('/svc/budget/import', { rows }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ['budget', 'summary'] });
     },

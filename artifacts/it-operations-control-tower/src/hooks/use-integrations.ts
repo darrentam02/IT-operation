@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 /*
  * Lightweight clients for the integration endpoints added on the api-server
- * (/api/health, /api/jira/tickets, /api/vendor/submissions). These sit outside
+ * (/svc/health, /svc/jira/tickets, /svc/vendor/submissions). These sit outside
  * the generated @workspace/api-client-react surface, so we fetch the relative
  * /api paths directly (Vite proxies them to the api-server in dev).
  */
@@ -49,10 +49,10 @@ async function getJSON<T>(path: string): Promise<T> {
 }
 
 function getHealth() {
-  return getJSON<HealthResponse>('/api/health');
+  return getJSON<HealthResponse>('/svc/health');
 }
 async function getJiraTickets(): Promise<JiraResponse> {
-  const response = await getJSON<IntegrationFeed & { tickets?: unknown }>('/api/jira/tickets');
+  const response = await getJSON<IntegrationFeed & { tickets?: unknown }>('/svc/jira/tickets');
   const nestedFeed =
     response.tickets && !Array.isArray(response.tickets) && typeof response.tickets === 'object'
       ? (response.tickets as Partial<JiraResponse>)
@@ -75,7 +75,7 @@ async function getJiraTickets(): Promise<JiraResponse> {
   };
 }
 function getVendorSubmissions() {
-  return getJSON<VendorResponse>('/api/vendor/submissions');
+  return getJSON<VendorResponse>('/svc/vendor/submissions');
 }
 
 export const integrationsKey = ['integrations', 'health'] as const;

@@ -52,10 +52,10 @@ describe("StaffPage Jira sync", () => {
   it("shows the Shift signal table with separate status columns", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/staff/sync-jira") {
+      if (path === "/svc/staff/sync-jira") {
         return jsonResponse({ count: 1 });
       }
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse([initialStaff]);
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -90,7 +90,7 @@ describe("StaffPage Jira sync", () => {
     let syncAttempts = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/staff/sync-jira") {
+      if (path === "/svc/staff/sync-jira") {
         syncAttempts += 1;
         if (syncAttempts === 1) {
           return jsonResponse({
@@ -102,7 +102,7 @@ describe("StaffPage Jira sync", () => {
         staff = [refreshedStaff];
         return jsonResponse({ count: 1 });
       }
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse(staff);
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -131,7 +131,7 @@ describe("StaffPage Jira sync", () => {
     expect(
       fetchMock.mock.calls.filter(
         ([input, init]) =>
-          String(input) === "/api/staff" && init?.method === "GET",
+          String(input) === "/svc/staff" && init?.method === "GET",
       ),
     ).toHaveLength(2);
   });
@@ -149,12 +149,12 @@ describe("StaffPage Jira sync", () => {
     let syncCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/staff/sync-jira") {
+      if (path === "/svc/staff/sync-jira") {
         syncCalls += 1;
         staff = [refreshedStaff];
         return jsonResponse({ count: 1 });
       }
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse(staff);
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -194,11 +194,11 @@ describe("StaffPage Jira sync", () => {
     let syncCalls = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/staff/sync-jira") {
+      if (path === "/svc/staff/sync-jira") {
         syncCalls += 1;
         return jsonResponse({ count: 1 });
       }
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse([refreshedStaff, secondStaff]);
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -243,10 +243,10 @@ describe("StaffPage Jira sync", () => {
     };
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/staff/sync-jira") {
+      if (path === "/svc/staff/sync-jira") {
         return jsonResponse({ count: 1 });
       }
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse([initialStaff, secondStaff]);
       }
       throw new Error(`Unexpected request: ${path}`);
@@ -284,10 +284,10 @@ describe("StaffPage Jira sync", () => {
     ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse(staff);
       }
-      if (path === "/api/dashboard/summary") {
+      if (path === "/svc/dashboard/summary") {
         return jsonResponse({
           systemPulse: 99.94,
           staleStaff: 1,
@@ -297,10 +297,10 @@ describe("StaffPage Jira sync", () => {
           lastSync: "2026-08-30T12:05:00.000Z",
         });
       }
-      if (path === "/api/health") {
+      if (path === "/svc/health") {
         return jsonResponse({ status: "ok" });
       }
-      if (path === "/api/jira/tickets") {
+      if (path === "/svc/jira/tickets") {
         return jsonResponse({
           source: "jira",
           tickets: [
@@ -364,7 +364,7 @@ describe("StaffPage Jira sync", () => {
   ])("shows a safe actionable message for %s sync failures", async (category, message, rawDetail) => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/staff/sync-jira") {
+      if (path === "/svc/staff/sync-jira") {
         return jsonResponse({
           error: "Jira shift sync failed; check the integration logs",
           code: "JIRA_SYNC_UNAVAILABLE",
@@ -372,7 +372,7 @@ describe("StaffPage Jira sync", () => {
           detail: rawDetail,
         }, 503);
       }
-      if (path === "/api/staff") {
+      if (path === "/svc/staff") {
         return jsonResponse([initialStaff]);
       }
       throw new Error(`Unexpected request: ${path}`);

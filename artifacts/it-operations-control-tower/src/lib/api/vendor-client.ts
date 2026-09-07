@@ -1,6 +1,6 @@
 // Vendor Self-Service client. Talks to the LIVE api-server vendor endpoints
-// (`/api/vendor/*`) using the vendor's dedicated `X-Vendor-Api-Key`.
-export const VENDOR_API_BASE_URL = import.meta.env.VITE_VENDOR_API_BASE_URL || 'https://it-operations-control-tower.replit.app';
+// (`/svc/vendor/*`) using the vendor's dedicated `X-Vendor-Api-Key`.
+export const VENDOR_API_BASE_URL = import.meta.env.VITE_VENDOR_API_BASE_URL || '';
 export const DEMO_VENDOR_KEYS: Record<string, string> = {
   'Cerebrum Cloud Pte Ltd': 'vk_demo_cerebrum',
   'NexaNet HK Limited': 'vk_demo_nexanet',
@@ -138,13 +138,13 @@ export function createVendorClient(apiKey: string) {
     request<T>(path, apiKey, { method: 'POST', body: JSON.stringify(body) });
 
   return {
-    portal: () => get<VendorPortalData>('/api/vendor/portal'),
+    portal: () => get<VendorPortalData>('/svc/vendor/portal'),
     submitInvoice: (payload: Record<string, unknown>) =>
-      post<InvoiceResult>('/api/vendor/invoices', payload),
+      post<InvoiceResult>('/svc/vendor/invoices', payload),
     recordDelivery: (payload: { procurementId: string; scheduleId: string; deliveredAt?: string; qty?: number; notes?: string }) =>
-      post<DeliveryResult>('/api/vendor/deliveries', payload),
+      post<DeliveryResult>('/svc/vendor/deliveries', payload),
     acceptPo: (payload: { procurementId: string; decision: 'accepted' | 'dispute'; notes?: string }) =>
-      post<PoAcceptanceResult>('/api/vendor/po-acceptance', payload),
+      post<PoAcceptanceResult>('/svc/vendor/po-acceptance', payload),
   };
 }
 
