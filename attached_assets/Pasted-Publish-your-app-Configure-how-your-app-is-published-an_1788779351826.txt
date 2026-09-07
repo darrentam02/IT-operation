@@ -1,0 +1,121 @@
+Publish your app
+Configure how your app is published and who can access it.
+Current status
+Unpublished
+darrentam02
+Darrentam02
+Connected domain(s)
+Available
+it-operation-demo1
+.replit.app
+Sharing
+
+Public
+Anyone on the internet with the URL
+Preview
+IT Operations Control Tower
+IT Operations Control Tower
+https://it-operation-demo1.replit.app/
+
+Suggested add-ons
+Security, monitoring, and feedback tools for your published app
+Deep security scan
+Security Agent combines LLMs with leading static analysis tools to deliver a pen-test-grade security scan of your project.
+Enable app uptime email notifications
+Be the first to know when your app is down. We'll continuously check if your app is online and notify you via email if things go wrong.
+
+Block publishing of critical vulnerabilities
+Controls whether publishing is blocked when critical vulnerabilities are found in the security scan.
+
+Enable analytics
+Understand how people use your published app with privacy-friendly analytics.
+
+Enable feedback widget
+
+Add a feedback widget to the corner of your published app. Review submissions in your inbox and send to Agent for fixes.
+
+"Made with Replit" badge
+Display a "Made with Replit" referral badge on your published app, when someone signs up using your referral link, you earn credits. Learn more.
+
+
+Advanced settings
+Deployment type
+Technology used to publish your app. Learn more
+
+Autoscale
+Automatically scales from zero to any level of demand.
+Resource usage
+The power of the servers running your app
+2 vCPUs / 4 GiB RAM / 3 max
+Per machine:
+$0.001/hour
+At max traffic:
+$0.002/hour
+Deployment secrets
+Private keys your apps use to access APIs and services. Manage your development secrets
+
+SESSION_SECRET
+
+••••••••
+
+
+
+JIRA_API_TOKEN
+
+••••••••
+
+
+
+JINA_API_KEY
+
+••••••••
+
+
+
+DEEPSEEK_API_KEY
+
+••••••••
+
+
+
+CONNECTORS_HOSTNAME
+
+••••••••
+
+
+
+REPLIT_CONNECTORS_HOSTNAME
+
+••••••••
+
+
+
+SUPABASE_URL
+
+••••••••
+
+
+
+SUPABASE_ANON_KEY
+
+••••••••
+
+
+
+SUPABASE_SERVICE_ROLE_KEY
+
+••••••••
+
+
+
+SUPABASE_DATABASE_URL
+
+••••••••
+
+
+Database settings
+An existing production database from a previous published app was found. Delete the existing database via the settings tab in the Database pane and create a new one.
+
+Create production database
+Deployment geography
+Choose where your app is hosted. Selecting a region closer to your users reduces latency and can improve performance. Once you publish, your app and its resources (such as the production database and Object Storage) are locked to this region — to change regions later you will need to remix this app. Learn more
